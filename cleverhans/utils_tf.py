@@ -183,6 +183,124 @@ def model_train(sess, x, y, predictions, X_train, Y_train, save=False,
     return True
 
 
+def model_train_2(sess, x, y, h, predictions, X_train, Y_train, cost, save=False,
+                predictions_adv=None, init_all=True, evaluate=None,
+                verbose=True, feed=None, args=None, rng=None):
+    """
+    Train a TF graph
+    :param sess: TF session to use when training the graph
+    :param x: input placeholder
+    :param y: output placeholder (for labels)
+    :param predictions: model output predictions
+    :param X_train: numpy array with training inputs
+    :param Y_train: numpy array with training outputs
+    :param save: boolean controlling the save operation
+    :param predictions_adv: if set with the adversarial example tensor,
+                            will run adversarial training
+    :param init_all: (boolean) If set to true, all TF variables in the session
+                     are (re)initialized, otherwise only previously
+                     uninitialized variables are initialized before training.
+    :param evaluate: function that is run after each training iteration
+                     (typically to display the test/validation accuracy).
+    :param verbose: (boolean) all print statements disabled when set to False.
+    :param feed: An optional dictionary that is appended to the feeding
+                 dictionary before the session runs. Can be used to feed
+                 the learning phase of a Keras model for instance.
+    :param args: dict or argparse `Namespace` object.
+                 Should contain `nb_epochs`, `learning_rate`,
+                 `batch_size`
+                 If save is True, should also contain 'train_dir'
+                 and 'filename'
+    :param rng: Instance of numpy.random.RandomState
+    :return: True if model trained
+    """
+    args = _ArgsWrapper(args or {})
+
+    # Check that necessary arguments were given (see doc above)
+    assert args.nb_epochs, "Number of epochs was not given in args dict"
+    assert args.learning_rate, "Learning rate was not given in args dict"
+    assert args.batch_size, "Batch size was not given in args dict"
+
+    if save:
+        assert args.train_dir, "Directory for save was not given in args dict"
+        assert args.filename, "Filename for save was not given in args dict"
+
+    if not verbose:
+        old_log_level = get_log_level(name=_logger.name)
+        set_log_level(logging.WARNING, name=_logger.name)
+        warnings.warn("verbose argument is deprecated and will be removed"
+                      " on 2018-02-11. Instead, use utils.set_log_level()."
+                      " For backward compatibility, log_level was set to"
+                      " logging.WARNING (30).")
+
+    if rng is None:
+        rng = np.random.RandomState()
+
+    # Define loss
+    loss = model_loss(y, predictions) + cost
+    if predictions_adv is not None:
+        loss = (loss + model_loss(y, predictions_adv)) / 2
+
+    train_step = tf.train.AdamOptimizer(learning_rate=args.learning_rate)
+    train_step = train_step.minimize(loss)
+
+    with sess.as_default():
+        if hasattr(tf, "global_variables_initializer"):
+            if init_all:
+                tf.global_variables_initializer().run()
+            else:
+                initialize_uninitialized_global_variables(sess)
+        else:
+            warnings.warn("Update your copy of tensorflow; future versions of "
+                          "CleverHans may drop support for this version.")
+            sess.run(tf.initialize_all_variables())
+
+        for epoch in xrange(args.nb_epochs):
+            # Compute number of batches
+            nb_batches = int(math.ceil(float(len(X_train)) / args.batch_size))
+            assert nb_batches * args.batch_size >= len(X_train)
+
+            # Indices to shuffle training set
+            index_shuf = list(range(len(X_train)))
+            rng.shuffle(index_shuf)
+
+            prev = time.time()
+            for batch in range(nb_batches):
+
+                # Compute batch start and end indices
+                start, end = batch_indices(
+                    batch, len(X_train), args.batch_size)
+
+
+                feed_dict = {x: X_train[index_shuf[start:end]].reshape([args.batch_size, 784]),
+                             y: Y_train[index_shuf[start:end]]}
+                if feed is not None:
+                    feed_dict.update(feed)
+                train_step.run(feed_dict=feed_dict)
+            assert end >= len(X_train)  # Check that all examples were used
+            cur = time.time()
+            if verbose:
+                _logger.info("Epoch " + str(epoch) + " took " +
+                             str(cur - prev) + " seconds")
+            if evaluate is not None:
+                evaluate()
+
+        if save:
+            save_path = os.path.join(args.train_dir, args.filename)
+            saver = tf.train.Saver()
+            saver.save(sess, save_path)
+            _logger.info("Completed model training and saved at: " +
+                         str(save_path))
+        else:
+            _logger.info("Completed model training.")
+
+    if not verbose:
+        set_log_level(old_log_level, name=_logger.name)
+
+    return True
+
+
+
 def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
                feed=None, args=None):
     """
@@ -241,8 +359,85 @@ def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
             # The last batch may be smaller than all others. This should not
             # affect the accuarcy disproportionately.
             cur_batch_size = end - start
-            X_cur[:cur_batch_size] = X_test[start:end]
+            X_cur[:cur_batch_size] = X_test[start:end]#.reshape([-1, 784])
             Y_cur[:cur_batch_size] = Y_test[start:end]
+            feed_dict = {x: X_cur, y: Y_cur}
+            if feed is not None:
+                feed_dict.update(feed)
+            cur_corr_preds = correct_preds.eval(feed_dict=feed_dict)
+
+            accuracy += cur_corr_preds[:cur_batch_size].sum()
+
+        assert end >= len(X_test)
+
+        # Divide by number of examples to get final value
+        accuracy /= len(X_test)
+
+    return accuracy
+
+def model_eval_2(sess, x, y, predictions, X_test=None, Y_test=None,
+               feed=None, args=None):
+    """
+    Compute the accuracy of a TF model on some data
+    :param sess: TF session to use when training the graph
+    :param x: input placeholder
+    :param y: output placeholder (for labels)
+    :param predictions: model output predictions
+    :param X_test: numpy array with training inputs
+    :param Y_test: numpy array with training outputs
+    :param feed: An optional dictionary that is appended to the feeding
+             dictionary before the session runs. Can be used to feed
+             the learning phase of a Keras model for instance.
+    :param args: dict or argparse `Namespace` object.
+                 Should contain `batch_size`
+    :return: a float with the accuracy value
+    """
+    args = _ArgsWrapper(args or {})
+
+    assert args.batch_size, "Batch size was not given in args dict"
+    if X_test is None or Y_test is None:
+        raise ValueError("X_test argument and Y_test argument "
+                         "must be supplied.")
+
+    # Define accuracy symbolically
+    if LooseVersion(tf.__version__) >= LooseVersion('1.0.0'):
+        correct_preds = tf.equal(tf.argmax(y, axis=-1),
+                                 tf.argmax(predictions, axis=-1))
+    else:
+        correct_preds = tf.equal(tf.argmax(y, axis=tf.rank(y) - 1),
+                                 tf.argmax(predictions,
+                                           axis=tf.rank(predictions) - 1))
+
+    # Init result var
+    accuracy = 0.0
+
+    with sess.as_default():
+        # Compute number of batches
+        nb_batches = int(math.ceil(float(len(X_test)) / args.batch_size))
+        assert nb_batches * args.batch_size >= len(X_test)
+
+        X_cur = np.zeros((args.batch_size,) + X_test.shape[1:],
+                         dtype=X_test.dtype)
+        Y_cur = np.zeros((args.batch_size,) + Y_test.shape[1:],
+                         dtype=Y_test.dtype)
+        for batch in range(nb_batches):
+            if batch % 100 == 0 and batch > 0:
+                _logger.debug("Batch " + str(batch))
+
+            # Must not use the `batch_indices` function here, because it
+            # repeats some examples.
+            # It's acceptable to repeat during training, but not eval.
+            start = batch * args.batch_size
+            end = min(len(X_test), start + args.batch_size)
+
+            # The last batch may be smaller than all others. This should not
+            # affect the accuarcy disproportionately.
+            cur_batch_size = end - start
+            X_cur = X_cur.reshape([-1, 784])
+            X_cur[:cur_batch_size] = X_test[start:end].reshape([-1, 784])
+            #X_cur[:cur_batch_size] = X_test[start:end]
+            Y_cur[:cur_batch_size] = Y_test[start:end]
+            #X_cur = X_cur.reshape([args.batch_size, 784])
             feed_dict = {x: X_cur, y: Y_cur}
             if feed is not None:
                 feed_dict.update(feed)

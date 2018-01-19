@@ -167,3 +167,15 @@ def make_basic_cnn(nb_filters=64, nb_classes=10,
 
     model = MLP(layers, input_shape)
     return model
+
+def make_basic_fc(nb_classes=10,
+                  input_shape=(None, 784)):
+    layers = [Linear(512),
+              ReLU(),
+              #Linear(512),
+              #ReLU(),
+              Linear(nb_classes),
+              Softmax()]
+
+    model = MLP(layers, input_shape)
+    return model
