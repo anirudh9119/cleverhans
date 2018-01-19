@@ -34,6 +34,60 @@ def corrupt(x):
                                                dtype=tf.int32), tf.float32))
 
 
+def autoencoder(dimensions=[512, 256, 64]):
+    """Build a deep denoising autoencoder w/ tied weights.
+    """
+    # input to the network
+    h = tf.placeholder(tf.float32, [None, dimensions[0]], name='h')
+
+    # I'll change this to 1 during training
+    # Put it back to 0.
+    corrupt_prob = tf.placeholder(tf.float32, [1])
+    current_input = corrupt(h) * corrupt_prob + h * (1 - corrupt_prob)
+
+    # Build the encoder
+    encoder = []
+    encoder_b = []
+    decoder_b = []
+    for layer_i, n_output in enumerate(dimensions[1:]):
+        n_input = int(current_input.get_shape()[1])
+        W = tf.Variable(
+            tf.random_uniform([n_input, n_output],
+                              -1.0 / math.sqrt(n_input),
+                              1.0 / math.sqrt(n_input)))
+        b = tf.Variable(tf.zeros([n_output]))
+        encoder.append(W)
+        encoder_b.append(b)
+        output = tf.nn.tanh(tf.matmul(current_input, W) + b)
+        current_input = output
+    # latent representation
+    #z = current_input
+    encoder.reverse()
+    # Build the decoder using the same weights
+    for layer_i, n_output in enumerate(dimensions[:-1][::-1]):
+        W = tf.transpose(encoder[layer_i])
+        b = tf.Variable(tf.zeros([n_output]))
+        output = tf.nn.tanh(tf.matmul(current_input, W) + b)
+        current_input = output
+        decoder_b.append(b)
+    # now have the reconstruction through the network
+    #y = current_input
+    # cost function measures pixel-wise difference
+    #cost = tf.sqrt(tf.reduce_mean(tf.square(y - x)))
+    return encoder, encoder_b, decoder_b, corrupt_prob
+            #{'x': x, 'z': z, 'y': y,
+            #'corrupt_prob': corrupt_prob,
+            #'cost': cost}
+
+def get_output(model, x, encoder, encoder_b, decoder_b):
+        #x= tf.reshape(x, [-1, 784])
+    h_input_to_dae_ = model.layers[1].fprop(model.layers[0].fprop(x))
+    output = tf.nn.tanh(tf.matmul(h_input_to_dae_, encoder[0]) + encoder_b[0])
+    output_ = tf.nn.tanh(tf.matmul(output, tf.transpose(encoder[0])) + decoder_b[0])
+    presoftmax_ = model.layers[2].fprop(output_)
+    preds = model.layers[3].fprop(presoftmax_)
+    cost = tf.sqrt(tf.reduce_mean(tf.square(h_input_to_dae_ - output_)))
+    return cost, preds
 
 
 def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
@@ -94,36 +148,6 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     x = tf.placeholder(tf.float32, shape=(None, 28, 28, 1))
     y = tf.placeholder(tf.float32, shape=(None, 10))
 
-    dimensions=[512, 256]
-    h = tf.placeholder(tf.float32, [None, dimensions[0]], name='x')
-    corrupt_prob = tf.placeholder(tf.float32, [1])
-    current_input = corrupt(h) * corrupt_prob + h * (1 - corrupt_prob)
-    encoder = []
-    #for layer_i, n_output in enumerate(dimensions[1:]):
-    n_output = 256
-    n_input = int(current_input.get_shape()[1])
-    W = tf.Variable(tf.random_uniform([n_input, n_output],-1.0 / math.sqrt(n_input), 1.0 / math.sqrt(n_input)))
-    bias = tf.Variable(tf.zeros([n_output]))
-    encoder.append(W)
-    output = tf.nn.tanh(tf.matmul(current_input, W) + bias)
-    current_input = output
-
-    # latent representation
-    #z = current_input
-    encoder.reverse()
-    # Build the decoder using the same weights
-    #for layer_i, n_output in enumerate(dimensions[:-1][::-1]):
-    W = tf.transpose(encoder[0])
-    n_output = 512
-    b = tf.Variable(tf.zeros([n_output]))
-    output = tf.nn.tanh(tf.matmul(current_input, W) + b)
-    current_input = output
-    # now have the reconstruction through the network
-    y_out = current_input
-    # cost function measures pixel-wise difference
-    cost = tf.sqrt(tf.reduce_mean(tf.square(y_out - h)))
-
-
     #model_path = "models/mnist"
     # Train an MNIST model
     train_params = {
@@ -141,13 +165,8 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     if clean_train:
         model = make_basic_fc()
         x= tf.reshape(x, [-1, 784])
-        h_input_to_dae_ = model.layers[1].fprop(model.layers[0].fprop(x))
-        output = tf.nn.tanh(tf.matmul(h_input_to_dae_, encoder[0]) + bias)
-        output_ = tf.nn.tanh(tf.matmul(output, tf.transpose(encoder[0])) + b)
-        presoftmax_ = model.layers[2].fprop(output_)
-        preds = model.layers[3].fprop(presoftmax_)
-        cost = tf.sqrt(tf.reduce_mean(tf.square(h_input_to_dae_ - output_)))
-
+        encoder, encoder_b, decoder_b, corrupt_prob = autoencoder(dimensions=[512, 256])
+        cost, preds = get_output(model, x, encoder, encoder_b, decoder_b)
 
         #preds = model.get_probs(x)
 
@@ -156,18 +175,18 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
             # examples
             eval_params = {'batch_size': batch_size}
             acc = model_eval_2(
-                sess, x, y, preds, X_test, Y_test, args=eval_params)
+                sess, x, y, corrupt_prob, preds, X_test, Y_test, args=eval_params)
             report.clean_train_clean_eval = acc
             assert X_test.shape[0] == test_end - test_start, X_test.shape
             print('Test accuracy on legitimate examples: %0.4f' % acc)
-        model_train_2(sess, x, y, h, preds, X_train, Y_train, cost, evaluate=evaluate,
+        model_train_2(sess, x, y, corrupt_prob, preds, X_train, Y_train, cost, evaluate=evaluate,
                     args=train_params, rng=rng)
 
         # Calculate training error
         if testing:
             eval_params = {'batch_size': batch_size}
             acc = model_eval_2(
-                sess, x, y, preds, X_train, Y_train, args=eval_params)
+                sess, x, y, corrupt_prob, preds, X_train, Y_train, args=eval_params)
             report.train_clean_train_clean_eval = acc
 
         # Initialize the Fast Gradient Sign Method (FGSM) attack object and
@@ -177,23 +196,18 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         preds_adv = model.get_probs(adv_x)
 
         adv_x = tf.reshape(adv_x, [-1, 784])
-        h_input_to_dae_ = model.layers[1].fprop(model.layers[0].fprop(adv_x))
-        output = tf.nn.tanh(tf.matmul(h_input_to_dae_, encoder[0]) + bias)
-        output_ = tf.nn.tanh(tf.matmul(output, tf.transpose(encoder[0])) + b)
-        presoftmax_ = model.layers[2].fprop(output_)
-        preds_adv = model.layers[3].fprop(presoftmax_)
-
+        cost, preds_adv = get_output(model, adv_x, encoder, encoder_b, decoder_b)
 
         # Evaluate the accuracy of the MNIST model on adversarial examples
         eval_par = {'batch_size': batch_size}
-        acc = model_eval_2(sess, x, y, preds_adv, X_test, Y_test, args=eval_par)
+        acc = model_eval_2(sess, x, y, corrupt_prob, preds_adv, X_test, Y_test, args=eval_par)
         print('Test accuracy on adversarial examples: %0.4f\n' % acc)
         report.clean_train_adv_eval = acc
 
         # Calculate training error
         if testing:
             eval_par = {'batch_size': batch_size}
-            acc = model_eval_2(sess, x, y, preds_adv, X_train,
+            acc = model_eval_2(sess, x, y, corrupt_prob, preds_adv, X_train,
                              Y_train, args=eval_par)
             report.train_clean_train_adv_eval = acc
 
