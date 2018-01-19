@@ -183,7 +183,7 @@ def model_train(sess, x, y, predictions, X_train, Y_train, save=False,
     return True
 
 
-def model_train_2(sess, x, y, h, predictions, X_train, Y_train, cost, save=False,
+def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, cost, save=False,
                 predictions_adv=None, init_all=True, evaluate=None,
                 verbose=True, feed=None, args=None, rng=None):
     """
@@ -273,7 +273,8 @@ def model_train_2(sess, x, y, h, predictions, X_train, Y_train, cost, save=False
 
 
                 feed_dict = {x: X_train[index_shuf[start:end]].reshape([args.batch_size, 784]),
-                             y: Y_train[index_shuf[start:end]]}
+                             y: Y_train[index_shuf[start:end]],
+                             corrupt_prob: [1]}
                 if feed is not None:
                     feed_dict.update(feed)
                 train_step.run(feed_dict=feed_dict)
@@ -375,7 +376,7 @@ def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
 
     return accuracy
 
-def model_eval_2(sess, x, y, predictions, X_test=None, Y_test=None,
+def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None,
                feed=None, args=None):
     """
     Compute the accuracy of a TF model on some data
@@ -438,7 +439,7 @@ def model_eval_2(sess, x, y, predictions, X_test=None, Y_test=None,
             #X_cur[:cur_batch_size] = X_test[start:end]
             Y_cur[:cur_batch_size] = Y_test[start:end]
             #X_cur = X_cur.reshape([args.batch_size, 784])
-            feed_dict = {x: X_cur, y: Y_cur}
+            feed_dict = {x: X_cur, y: Y_cur, corrupt_prob: [0]}
             if feed is not None:
                 feed_dict.update(feed)
             cur_corr_preds = correct_preds.eval(feed_dict=feed_dict)

@@ -109,7 +109,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     current_input = output
 
     # latent representation
-    z = current_input
+    #z = current_input
     encoder.reverse()
     # Build the decoder using the same weights
     #for layer_i, n_output in enumerate(dimensions[:-1][::-1]):
@@ -175,6 +175,14 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         fgsm = FastGradientMethod(model, sess=sess)
         adv_x = fgsm.generate(x, **fgsm_params)
         preds_adv = model.get_probs(adv_x)
+
+        adv_x = tf.reshape(adv_x, [-1, 784])
+        h_input_to_dae_ = model.layers[1].fprop(model.layers[0].fprop(adv_x))
+        output = tf.nn.tanh(tf.matmul(h_input_to_dae_, encoder[0]) + bias)
+        output_ = tf.nn.tanh(tf.matmul(output, tf.transpose(encoder[0])) + b)
+        presoftmax_ = model.layers[2].fprop(output_)
+        preds_adv = model.layers[3].fprop(presoftmax_)
+
 
         # Evaluate the accuracy of the MNIST model on adversarial examples
         eval_par = {'batch_size': batch_size}
