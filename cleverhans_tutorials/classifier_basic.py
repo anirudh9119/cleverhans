@@ -18,8 +18,6 @@ from cleverhans.utils import AccuracyReport, set_log_level
 import math
 FLAGS = flags.FLAGS
 
-print("Importing autoencoder classifier!")
-
 def corrupt(x):
     """Take an input tensor and add uniform masking.
     """
@@ -75,14 +73,16 @@ def autoencoder(dimensions=[512, 256, 64]):
             #'corrupt_prob': corrupt_prob,
             #'cost': cost}
 
+print("Importing basic classifier!")
+
 def get_output(model, x, encoder, encoder_b, decoder_b):
         #x= tf.reshape(x, [-1, 784])
     h_input_to_dae_ = model.layers[1].fprop(model.layers[0].fprop(x))
     output = tf.nn.tanh(tf.matmul(h_input_to_dae_, encoder[0]) + encoder_b[0])
     output_ = tf.nn.tanh(tf.matmul(output, tf.transpose(encoder[0])) + decoder_b[0])
-    presoftmax_ = model.layers[2].fprop(output_)
+    presoftmax_ = model.layers[2].fprop(h_input_to_dae_)
     preds = model.layers[3].fprop(presoftmax_)
-    cost = tf.sqrt(tf.reduce_mean(tf.square(h_input_to_dae_ - output_)))
+    cost = 0.0 * tf.sqrt(tf.reduce_mean(tf.square(h_input_to_dae_ - output_)))
     return cost, preds
 
 

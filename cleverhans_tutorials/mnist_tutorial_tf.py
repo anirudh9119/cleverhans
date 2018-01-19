@@ -21,7 +21,10 @@ from cleverhans.attacks import FastGradientMethod
 from cleverhans_tutorials.tutorial_models import make_basic_cnn, make_basic_fc
 from cleverhans.utils import AccuracyReport, set_log_level
 
-from autoencoder_tied_arch import get_output, autoencoder
+
+#from autoencoder_tied_arch import get_output, autoencoder
+
+from classifier_basic import get_output, autoencoder
 
 #import os
 import math
