@@ -16,9 +16,9 @@ from tensorflow.python.platform import flags
 import logging
 
 from cleverhans.utils_mnist import data_mnist
-from cleverhans.utils_tf import model_train, model_train_2, model_eval, model_eval_2
+from cleverhans.utils_tf import model_train_2, model_eval_2
 from cleverhans.attacks import FastGradientMethod
-from cleverhans_tutorials.tutorial_models import make_basic_cnn, make_basic_fc
+from cleverhans_tutorials.tutorial_models import make_basic_fc#, make_basic_cnn
 from cleverhans.utils import AccuracyReport, set_log_level
 
 #import os
@@ -28,7 +28,7 @@ FLAGS = flags.FLAGS
 def corrupt(x):
     """Take an input tensor and add uniform masking.
     """
-    return tf.multiply(x, tf.cast(tf.random_uniform(shape=tf.shape(x),
+    return tf.add(x, tf.cast(tf.random_uniform(shape=tf.shape(x),
                                                minval=0,
                                                maxval=2,
                                                dtype=tf.int32), tf.float32))
@@ -165,7 +165,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     if clean_train:
         model = make_basic_fc()
         x= tf.reshape(x, [-1, 784])
-        encoder, encoder_b, decoder_b, corrupt_prob = autoencoder(dimensions=[512, 256])
+        encoder, encoder_b, decoder_b, corrupt_prob = autoencoder(dimensions=[512, 128])
         cost, preds = get_output(model, x, encoder, encoder_b, decoder_b)
 
         #preds = model.get_probs(x)
@@ -193,8 +193,6 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         # graph
         fgsm = FastGradientMethod(model, sess=sess)
         adv_x = fgsm.generate(x, **fgsm_params)
-        preds_adv = model.get_probs(adv_x)
-
         adv_x = tf.reshape(adv_x, [-1, 784])
         cost, preds_adv = get_output(model, adv_x, encoder, encoder_b, decoder_b)
 
@@ -213,47 +211,54 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
         print("Repeating the process, using adversarial training")
     # Redefine TF model graph
-    x = tf.placeholder(tf.float32, shape=(None, 28, 28, 1))
-    model_2 = make_basic_cnn(nb_filters=nb_filters)
-    preds_2 = model_2(x)
+    #x = tf.placeholder(tf.float32, shape=(None, 28, 28, 1))
+    x= tf.reshape(x, [-1, 784])
+    #model_2 = make_basic_cnn(nb_filters=nb_filters)
+    model_2 = make_basic_fc()
+    without_denoising = True#False
+    cost_2 = 0
+    corrupt_prob_2 = tf.placeholder(tf.float32, [1])
     fgsm2 = FastGradientMethod(model_2, sess=sess)
     adv_x_2 = fgsm2.generate(x, **fgsm_params)
-    if not backprop_through_attack:
-        # For the fgsm attack used in this tutorial, the attack has zero
-        # gradient so enabling this flag does not change the gradient.
-        # For some other attacks, enabling this flag increases the cost of
-        # training, but gives the defender the ability to anticipate how
-        # the atacker will change their strategy in response to updates to
-        # the defender's parameters.
-        adv_x_2 = tf.stop_gradient(adv_x_2)
-    preds_2_adv = model_2(adv_x_2)
+
+    if without_denoising == False:
+        preds_2 = model_2(x)
+        if not backprop_through_attack:
+            adv_x_2 = tf.stop_gradient(adv_x_2)
+        preds_2_adv = model_2(adv_x_2)
+    else:
+        encoder_2, encoder_b_2, decoder_b_2, corrupt_prob_2 = autoencoder(dimensions=[512, 320])
+        cost_2, preds_2 = get_output(model_2, x, encoder_2, encoder_b_2, decoder_b_2)
+        if not backprop_through_attack:
+            adv_x_2 = tf.stop_gradient(adv_x_2)
+        cost_2, preds_2_adv = get_output(model_2, adv_x_2, encoder_2, encoder_b_2, decoder_b_2)
 
     def evaluate_2():
         # Accuracy of adversarially trained model on legitimate test inputs
         eval_params = {'batch_size': batch_size}
-        accuracy = model_eval(sess, x, y, preds_2, X_test, Y_test,
+        accuracy = model_eval_2(sess, x, y, corrupt_prob_2, preds_2, X_test, Y_test,
                               args=eval_params)
         print('Test accuracy on legitimate examples: %0.4f' % accuracy)
         report.adv_train_clean_eval = accuracy
 
         # Accuracy of the adversarially trained model on adversarial examples
-        accuracy = model_eval(sess, x, y, preds_2_adv, X_test,
+        accuracy = model_eval_2(sess, x, y, corrupt_prob_2, preds_2_adv, X_test,
                               Y_test, args=eval_params)
         print('Test accuracy on adversarial examples: %0.4f' % accuracy)
         report.adv_train_adv_eval = accuracy
 
     # Perform and evaluate adversarial training
-    model_train(sess, x, y, preds_2, X_train, Y_train,
-                predictions_adv=preds_2_adv, evaluate=evaluate_2,
+    model_train_2(sess, x, y, corrupt_prob_2, preds_2, X_train, Y_train,
+                cost_2, predictions_adv=preds_2_adv, evaluate=evaluate_2,
                 args=train_params, rng=rng)
 
     # Calculate training errors
     if testing:
         eval_params = {'batch_size': batch_size}
-        accuracy = model_eval(sess, x, y, preds_2, X_train, Y_train,
+        accuracy = model_eval_2(sess, x, y, corrupt_prob_2, preds_2, X_train, Y_train,
                               args=eval_params)
         report.train_adv_train_clean_eval = accuracy
-        accuracy = model_eval(sess, x, y, preds_2_adv, X_train,
+        accuracy = model_eval_2(sess, x, y, corrupt_prob_2, preds_2_adv, X_train,
                               Y_train, args=eval_params)
         report.train_adv_train_adv_eval = accuracy
 
