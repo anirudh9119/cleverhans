@@ -25,10 +25,10 @@ from cleverhans.utils import AccuracyReport, set_log_level
 import math
 FLAGS = flags.FLAGS
 
-from autoencoder_tied_arch import autoencoder, get_output
+#from autoencoder_tied_arch import autoencoder, get_output
 #from classifier_basic import autoencoder, get_output
-
-
+#from autoencoder_condrec import autoencoder, get_output
+from autoencoder_pspace import autoencoder, get_output
 
 def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
                    test_end=10000, nb_epochs=20, batch_size=128,
