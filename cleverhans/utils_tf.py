@@ -184,8 +184,8 @@ def model_train(sess, x, y, predictions, X_train, Y_train, save=False,
 
 
 def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, cost, save=False,
-                predictions_adv=None, init_all=True, evaluate=None,
-                verbose=True, feed=None, args=None, rng=None):
+                predictions_adv=None, cost_rec_adv=None, init_all=True, evaluate=None,
+                verbose=True, feed=None, args=None, rng=None, rec_loss_weight=1.0):
     """
     Train a TF graph
     :param sess: TF session to use when training the graph
@@ -239,7 +239,7 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, cost,
     # Define loss
     loss = model_loss(y, predictions) + cost
     if predictions_adv is not None:
-        loss = (loss + model_loss(y, predictions_adv)) / 2
+        loss = (loss * rec_loss_weight + model_loss(y, predictions_adv)) / 2
 
     train_step = tf.train.AdamOptimizer(learning_rate=args.learning_rate)
     train_step = train_step.minimize(loss)
@@ -376,7 +376,7 @@ def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
 
     return accuracy
 
-def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None,
+def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None, rec_cost=None,
                feed=None, args=None):
     """
     Compute the accuracy of a TF model on some data
@@ -411,6 +411,10 @@ def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None
 
     # Init result var
     accuracy = 0.0
+    if rec_cost is None:
+        rec_error = None
+    else:
+        rec_error = 0.0
 
     with sess.as_default():
         # Compute number of batches
@@ -444,14 +448,21 @@ def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None
                 feed_dict.update(feed)
             cur_corr_preds = correct_preds.eval(feed_dict=feed_dict)
 
+            if rec_cost is not None:
+                rec_cost_eval = rec_cost.eval(feed_dict=feed_dict)
+                rec_error += rec_cost_eval
+
             accuracy += cur_corr_preds[:cur_batch_size].sum()
 
         assert end >= len(X_test)
 
         # Divide by number of examples to get final value
         accuracy /= len(X_test)
+        if rec_error is not None:
+            rec_error *= 100.0
+            rec_error /= len(X_test)
 
-    return accuracy
+    return accuracy, rec_error
 
 
 def tf_model_load(sess, file_path=None):

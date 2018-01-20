@@ -31,7 +31,7 @@ from autoencoder_tied_arch import autoencoder, get_output
 
 
 def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
-                   test_end=10000, nb_epochs=6, batch_size=128,
+                   test_end=10000, nb_epochs=20, batch_size=128,
                    learning_rate=0.001,
                    clean_train=True,
                    testing=False,
@@ -114,7 +114,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
             # Evaluate the accuracy of the MNIST model on legitimate test
             # examples
             eval_params = {'batch_size': batch_size}
-            acc = model_eval_2(
+            acc,_ = model_eval_2(
                 sess, x, y, corrupt_prob, preds, X_test, Y_test, args=eval_params)
             report.clean_train_clean_eval = acc
             assert X_test.shape[0] == test_end - test_start, X_test.shape
@@ -126,7 +126,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         if testing:
             eval_params = {'batch_size': batch_size}
             acc = model_eval_2(
-                sess, x, y, corrupt_prob, preds, X_train, Y_train, args=eval_params)
+                sess, x, y, corrupt_prob, preds, X_train, Y_train, rec_cost=cost, args=eval_params)
             report.train_clean_train_clean_eval = acc
 
         # Initialize the Fast Gradient Sign Method (FGSM) attack object and
@@ -138,7 +138,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
         # Evaluate the accuracy of the MNIST model on adversarial examples
         eval_par = {'batch_size': batch_size}
-        acc = model_eval_2(sess, x, y, corrupt_prob, preds_adv, X_test, Y_test, args=eval_par)
+        acc,_ = model_eval_2(sess, x, y, corrupt_prob, preds_adv, X_test, Y_test, args=eval_par)
         print('Test accuracy on adversarial examples: %0.4f\n' % acc)
         report.clean_train_adv_eval = acc
 
@@ -172,25 +172,27 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         cost_2, preds_2 = get_output(model_2, x, encoder_2, encoder_b_2, decoder_b_2)
         if not backprop_through_attack:
             adv_x_2 = tf.stop_gradient(adv_x_2)
-        cost_2, preds_2_adv = get_output(model_2, adv_x_2, encoder_2, encoder_b_2, decoder_b_2)
+        cost_2_adv, preds_2_adv = get_output(model_2, adv_x_2, encoder_2, encoder_b_2, decoder_b_2)
 
     def evaluate_2():
         # Accuracy of adversarially trained model on legitimate test inputs
         eval_params = {'batch_size': batch_size}
-        accuracy = model_eval_2(sess, x, y, corrupt_prob_2, preds_2, X_test, Y_test,
+        accuracy,rec_error = model_eval_2(sess, x, y, corrupt_prob_2, preds_2, X_test, Y_test,rec_cost=cost_2,
                               args=eval_params)
         print('Test accuracy on legitimate examples: %0.4f' % accuracy)
+        print('Test rec error on legitimate examples: %0.4f' % rec_error)
         report.adv_train_clean_eval = accuracy
 
         # Accuracy of the adversarially trained model on adversarial examples
-        accuracy = model_eval_2(sess, x, y, corrupt_prob_2, preds_2_adv, X_test,
-                              Y_test, args=eval_params)
+        accuracy, rec_error = model_eval_2(sess, x, y, corrupt_prob_2, preds_2_adv, X_test, Y_test, rec_cost=cost_2_adv,
+                              args=eval_params)
         print('Test accuracy on adversarial examples: %0.4f' % accuracy)
+        print('Test rec error on adversarial examples: %0.4f' % rec_error)
         report.adv_train_adv_eval = accuracy
 
     # Perform and evaluate adversarial training
     model_train_2(sess, x, y, corrupt_prob_2, preds_2, X_train, Y_train,
-                cost_2, predictions_adv=preds_2_adv, evaluate=evaluate_2,
+                cost_2, cost_rec_adv=cost_2_adv, predictions_adv=preds_2_adv, evaluate=evaluate_2,
                 args=train_params, rng=rng)
 
     # Calculate training errors
@@ -216,7 +218,7 @@ def main(argv=None):
 
 if __name__ == '__main__':
     flags.DEFINE_integer('nb_filters', 64, 'Model size multiplier')
-    flags.DEFINE_integer('nb_epochs', 6, 'Number of epochs to train model')
+    flags.DEFINE_integer('nb_epochs', 20, 'Number of epochs to train model')
     flags.DEFINE_integer('batch_size', 128, 'Size of training batches')
     flags.DEFINE_float('learning_rate', 0.001, 'Learning rate for training')
     flags.DEFINE_bool('clean_train', True, 'Train on clean examples')
