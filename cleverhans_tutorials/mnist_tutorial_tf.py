@@ -25,10 +25,11 @@ from cleverhans.utils import AccuracyReport, set_log_level
 import math
 FLAGS = flags.FLAGS
 
-from autoencoder_tied_arch import autoencoder, get_output
+#from autoencoder_tied_arch import autoencoder, get_output
 #from classifier_basic import autoencoder, get_output
 #from autoencoder_pspace import autoencoder, get_output
 #from autoencoder_condrec import autoencoder, get_output, make_basic_fc
+from autoencoder_modelmatch import autoencoder, get_output, make_basic_fc
 
 def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
                    test_end=10000, nb_epochs=20, batch_size=128,
@@ -103,9 +104,9 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
 
     if clean_train:
-        model = make_basic_fc()
         x= tf.reshape(x, [-1, 784])
         encoder, encoder_b, decoder_b, corrupt_prob = autoencoder(dimensions=[512, 128])
+        model = make_basic_fc(encoder, encoder_b, decoder_b)
         cost, preds = get_output(model, x, encoder, encoder_b, decoder_b)
 
         #preds = model.get_probs(x)
@@ -154,9 +155,14 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     #x = tf.placeholder(tf.float32, shape=(None, 28, 28, 1))
     x= tf.reshape(x, [-1, 784])
     #model_2 = make_basic_cnn(nb_filters=nb_filters)
-    model_2 = make_basic_fc()
     with_denoising = True
     print("using denoising for training adversarial", with_denoising)
+    assert with_denoising == True
+
+    if with_denoising:
+        encoder_2, encoder_b_2, decoder_b_2, corrupt_prob_2 = autoencoder(dimensions=[512, 320])
+        model_2 = make_basic_fc(encoder_2, encoder_b_2, decoder_b_2)
+
     cost_2 = 0
     corrupt_prob_2 = tf.placeholder(tf.float32, [1])
     fgsm2 = FastGradientMethod(model_2, sess=sess)
@@ -218,7 +224,7 @@ def main(argv=None):
 
 if __name__ == '__main__':
     flags.DEFINE_integer('nb_filters', 64, 'Model size multiplier')
-    flags.DEFINE_integer('nb_epochs', 20, 'Number of epochs to train model')
+    flags.DEFINE_integer('nb_epochs', 5, 'Number of epochs to train model')
     flags.DEFINE_integer('batch_size', 128, 'Size of training batches')
     flags.DEFINE_float('learning_rate', 0.001, 'Learning rate for training')
     flags.DEFINE_bool('clean_train', True, 'Train on clean examples')
