@@ -251,7 +251,8 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 def main(argv=None):
     mnist_tutorial(nb_epochs=FLAGS.nb_epochs, batch_size=FLAGS.batch_size,
                    learning_rate=FLAGS.learning_rate,
-                   attack_name='MadryEtAl', #'FGSM'
+                   #attack_name='MadryEtAl', #'FGSM'
+                   attack_name='FGSM',
                    clean_train=FLAGS.clean_train,
                    backprop_through_attack=FLAGS.backprop_through_attack,
                    nb_filters=FLAGS.nb_filters)
