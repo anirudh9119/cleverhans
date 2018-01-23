@@ -17,12 +17,12 @@ import logging
 
 from cleverhans.utils_mnist import data_mnist
 from cleverhans.utils_tf import model_train_2, model_eval_2
-from cleverhans.attacks import FastGradientMethod
-from cleverhans_tutorials.tutorial_models import make_basic_fc#, make_basic_cnn
+from cleverhans.attacks import FastGradientMethod, MadryEtAl
+#from cleverhans_tutorials.tutorial_models import make_basic_fc#, make_basic_cnn
 from cleverhans.utils import AccuracyReport, set_log_level
 
 #import os
-import math
+#import math
 FLAGS = flags.FLAGS
 
 #from autoencoder_tied_arch import autoencoder, get_output
@@ -31,9 +31,45 @@ FLAGS = flags.FLAGS
 #from autoencoder_condrec import autoencoder, get_output, make_basic_fc
 from autoencoder_modelmatch import autoencoder, get_output, make_basic_fc
 
+def create_adv_by_name(model, x, attack_type, sess, dataset, y=None, **kwargs):
+    attack_names = {'FGSM': FastGradientMethod,
+                    'MadryEtAl': MadryEtAl,
+                    }
+
+    if attack_type not in attack_names:
+        raise Exception('Attack %s not defined.' % attack_type)
+
+    attack_params_shared = {
+        #'mnist': {'eps': .3, 'eps_iter': 0.01, 'clip_min': 0., 'clip_max': 1.,
+        'mnist': {'eps': 1.0, 'eps_iter': 1.2, 'clip_min': 0., 'clip_max': 1.,
+                  'nb_iter': 40},
+        'cifar10': {'eps': 8./255, 'eps_iter': 0.01, 'clip_min': 0.,
+                    'clip_max': 1., 'nb_iter': 20}
+    }
+
+    with tf.variable_scope(attack_type):
+        attack_class = attack_names[attack_type]
+        attack = attack_class(model, sess=sess)
+
+        # Extract feedable and structural keyword arguments from kwargs
+        fd_kwargs = attack.feedable_kwargs.keys() + attack.structural_kwargs
+        params = attack_params_shared[dataset].copy()
+        params.update({k: v for k, v in kwargs.items() if v is not None})
+        params = {k: v for k, v in params.items() if k in fd_kwargs}
+
+        if '_y' in attack_type:
+            params['y'] = y
+        logging.info(params)
+        adv_x = attack.generate(x, **params)
+
+    return adv_x
+
+
+
 def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
                    test_end=10000, nb_epochs=20, batch_size=128,
                    learning_rate=0.001,
+                   attack_name='MadryEtAl',
                    clean_train=True,
                    testing=False,
                    backprop_through_attack=False,
@@ -96,11 +132,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         'batch_size': batch_size,
         'learning_rate': learning_rate
     }
-    fgsm_params = {'eps': 0.3,
-                   'clip_min': 0.,
-                   'clip_max': 1.}
     rng = np.random.RandomState([2017, 8, 30])
-
 
 
     if clean_train:
@@ -132,8 +164,8 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
         # Initialize the Fast Gradient Sign Method (FGSM) attack object and
         # graph
-        fgsm = FastGradientMethod(model, sess=sess)
-        adv_x = fgsm.generate(x, **fgsm_params)
+
+        adv_x = create_adv_by_name(model, x, attack_name, sess, 'mnist')
         adv_x = tf.reshape(adv_x, [-1, 784])
         cost, preds_adv = get_output(model, adv_x, encoder, encoder_b, decoder_b)
 
@@ -165,8 +197,8 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
     cost_2 = 0
     corrupt_prob_2 = tf.placeholder(tf.float32, [1])
-    fgsm2 = FastGradientMethod(model_2, sess=sess)
-    adv_x_2 = fgsm2.generate(x, **fgsm_params)
+    adv_x_2 = create_adv_by_name(model_2, x, attack_name, sess, 'mnist')
+    adv_x_2 = tf.reshape(adv_x_2, [-1, 784])
 
     if with_denoising == False:
         preds_2 = model_2(x)
@@ -217,6 +249,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 def main(argv=None):
     mnist_tutorial(nb_epochs=FLAGS.nb_epochs, batch_size=FLAGS.batch_size,
                    learning_rate=FLAGS.learning_rate,
+                   attack_name='MadryEtAl', #'FGSM'
                    clean_train=FLAGS.clean_train,
                    backprop_through_attack=FLAGS.backprop_through_attack,
                    nb_filters=FLAGS.nb_filters)
