@@ -105,9 +105,9 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
     if clean_train:
         x= tf.reshape(x, [-1, 784])
-        encoder, encoder_b, decoder_b, corrupt_prob = autoencoder(dimensions=[512, 128])
-        model = make_basic_fc(encoder, encoder_b, decoder_b)
-        cost, preds = get_output(model, x, encoder, encoder_b, decoder_b)
+        encoder, encoder_b, decoder_b, autoencoder_params, corrupt_prob = autoencoder(dimensions=[512, 128])
+        model = make_basic_fc(encoder, encoder_b, decoder_b, autoencoder_params)
+        cost, preds = get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params)
 
         #preds = model.get_probs(x)
 
@@ -115,12 +115,13 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
             # Evaluate the accuracy of the MNIST model on legitimate test
             # examples
             eval_params = {'batch_size': batch_size}
-            acc,_ = model_eval_2(
-                sess, x, y, corrupt_prob, preds, X_test, Y_test, args=eval_params)
+            acc,rec_error = model_eval_2(
+                sess, x, y, corrupt_prob, preds, X_test, Y_test, args=eval_params, rec_cost=cost)
             report.clean_train_clean_eval = acc
             assert X_test.shape[0] == test_end - test_start, X_test.shape
             print('Test accuracy on legitimate examples: %0.4f' % acc)
-        model_train_2(sess, x, y, corrupt_prob, preds, X_train, Y_train, cost, evaluate=evaluate,
+            print('rec error on legitimate examples: %0.4f' % rec_error)
+        model_train_2(sess, x, y, corrupt_prob, preds, X_train, Y_train, evaluate=evaluate,rec_cost=cost,
                     args=train_params, rng=rng)
 
         # Calculate training error
@@ -135,12 +136,13 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         fgsm = FastGradientMethod(model, sess=sess)
         adv_x = fgsm.generate(x, **fgsm_params)
         adv_x = tf.reshape(adv_x, [-1, 784])
-        cost, preds_adv = get_output(model, adv_x, encoder, encoder_b, decoder_b)
+        cost, preds_adv = get_output(model, adv_x, encoder, encoder_b, decoder_b, autoencoder_params)
 
         # Evaluate the accuracy of the MNIST model on adversarial examples
         eval_par = {'batch_size': batch_size}
-        acc,_ = model_eval_2(sess, x, y, corrupt_prob, preds_adv, X_test, Y_test, args=eval_par)
+        acc,rec_error = model_eval_2(sess, x, y, corrupt_prob, preds_adv, X_test, Y_test, rec_cost=cost, args=eval_par)
         print('Test accuracy on adversarial examples: %0.4f\n' % acc)
+        print('rec error on adversarial examples: %0.4f\n' % rec_error)
         report.clean_train_adv_eval = acc
 
         # Calculate training error
@@ -160,8 +162,8 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     assert with_denoising == True
 
     if with_denoising:
-        encoder_2, encoder_b_2, decoder_b_2, corrupt_prob_2 = autoencoder(dimensions=[512, 320])
-        model_2 = make_basic_fc(encoder_2, encoder_b_2, decoder_b_2)
+        encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, corrupt_prob_2 = autoencoder(dimensions=[512, 320])
+        model_2 = make_basic_fc(encoder_2, encoder_b_2, decoder_b_2, autoencoder_params)
 
     cost_2 = 0
     corrupt_prob_2 = tf.placeholder(tf.float32, [1])
@@ -174,11 +176,11 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
             adv_x_2 = tf.stop_gradient(adv_x_2)
         preds_2_adv = model_2(adv_x_2)
     else:
-        encoder_2, encoder_b_2, decoder_b_2, corrupt_prob_2 = autoencoder(dimensions=[512, 320])
-        cost_2, preds_2 = get_output(model_2, x, encoder_2, encoder_b_2, decoder_b_2)
+        encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, corrupt_prob_2 = autoencoder(dimensions=[512, 320])
+        cost_2, preds_2 = get_output(model_2, x, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params)
         if not backprop_through_attack:
             adv_x_2 = tf.stop_gradient(adv_x_2)
-        cost_2_adv, preds_2_adv = get_output(model_2, adv_x_2, encoder_2, encoder_b_2, decoder_b_2)
+        cost_2_adv, preds_2_adv = get_output(model_2, adv_x_2, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params)
 
     def evaluate_2():
         # Accuracy of adversarially trained model on legitimate test inputs
@@ -198,7 +200,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
     # Perform and evaluate adversarial training
     model_train_2(sess, x, y, corrupt_prob_2, preds_2, X_train, Y_train,
-                cost_2, cost_rec_adv=cost_2_adv, predictions_adv=preds_2_adv, evaluate=evaluate_2,
+                rec_cost=cost_2, predictions_adv=preds_2_adv, evaluate=evaluate_2,
                 args=train_params, rng=rng)
 
     # Calculate training errors
@@ -224,7 +226,7 @@ def main(argv=None):
 
 if __name__ == '__main__':
     flags.DEFINE_integer('nb_filters', 64, 'Model size multiplier')
-    flags.DEFINE_integer('nb_epochs', 5, 'Number of epochs to train model')
+    flags.DEFINE_integer('nb_epochs', 20, 'Number of epochs to train model')
     flags.DEFINE_integer('batch_size', 128, 'Size of training batches')
     flags.DEFINE_float('learning_rate', 0.001, 'Learning rate for training')
     flags.DEFINE_bool('clean_train', True, 'Train on clean examples')

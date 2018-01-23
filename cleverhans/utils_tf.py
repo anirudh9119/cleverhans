@@ -183,8 +183,8 @@ def model_train(sess, x, y, predictions, X_train, Y_train, save=False,
     return True
 
 
-def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, cost, save=False,
-                predictions_adv=None, cost_rec_adv=None, init_all=True, evaluate=None,
+def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, save=False,
+                predictions_adv=None, rec_cost=None, init_all=True, evaluate=None,
                 verbose=True, feed=None, args=None, rng=None, rec_loss_weight=1.0):
     """
     Train a TF graph
@@ -237,9 +237,9 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, cost,
         rng = np.random.RandomState()
 
     # Define loss
-    loss = model_loss(y, predictions) + cost
+    loss = model_loss(y, predictions) + rec_cost * rec_loss_weight
     if predictions_adv is not None:
-        loss = (loss * rec_loss_weight + model_loss(y, predictions_adv)) / 2
+        loss = (loss + model_loss(y, predictions_adv) + rec_cost * rec_loss_weight) / 3
 
     train_step = tf.train.AdamOptimizer(learning_rate=args.learning_rate)
     train_step = train_step.minimize(loss)

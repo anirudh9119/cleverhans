@@ -29,6 +29,8 @@ def corrupt(x):
                                                maxval=2,
                                                dtype=tf.int32), tf.float32))
 
+def gaussian_corrupt(x,std):
+    return x + tf.cast(tf.random_normal(shape=tf.shape(x),stddev=std), tf.float32)
 
 def autoencoder(dimensions=[512, 256, 64]):
     """Build a deep denoising autoencoder w/ tied weights.
@@ -40,6 +42,8 @@ def autoencoder(dimensions=[512, 256, 64]):
     # Put it back to 0.
     corrupt_prob = tf.placeholder(tf.float32, [1])
     current_input = corrupt(h) * corrupt_prob + h * (1 - corrupt_prob)
+
+    autoencoder_params = {}
 
     # Build the encoder
     encoder = []
@@ -71,22 +75,38 @@ def autoencoder(dimensions=[512, 256, 64]):
     #y = current_input
     # cost function measures pixel-wise difference
     #cost = tf.sqrt(tf.reduce_mean(tf.square(y - x)))
-    return encoder, encoder_b, decoder_b, corrupt_prob
+
+    autoencoder_params['x_w1'] = tf.Variable(tf.random_uniform([784, 512],-1.0 / math.sqrt(512),1.0 / math.sqrt(512)))
+    autoencoder_params['x_w2'] = tf.Variable(tf.random_uniform([512, 784],-1.0 / math.sqrt(512),1.0 / math.sqrt(512)))
+
+    return encoder, encoder_b, decoder_b, autoencoder_params, corrupt_prob
             #{'x': x, 'z': z, 'y': y,
             #'corrupt_prob': corrupt_prob,
             #'cost': cost}
 
-def get_output(model, x, encoder, encoder_b, decoder_b,return_state_map=False):
-        #x= tf.reshape(x, [-1, 784])
-    h_input_to_dae_ = model.layers['a1'].fprop(model.layers['l1'].fprop(x))
+def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False):
+    #x= tf.reshape(x, [-1, 784])
+
+    if autoenc_x:
+        xa = tf.nn.leaky_relu(tf.matmul(x, autoencoder_params['x_w1']))
+        xuse = tf.matmul(xa, autoencoder_params['x_w2'])
+    else:
+        xuse = x
+
+    h_input_to_dae_ = tf.nn.relu(model.layers['l1'].fprop(xuse))
     output = tf.nn.tanh(tf.matmul(h_input_to_dae_, encoder[0]) + encoder_b[0])
     output_ = tf.nn.tanh(tf.matmul(output, tf.transpose(encoder[0])) + decoder_b[0])
 
-    #h2 = model.layers['a2'].fprop(model.layers['l2'].fprop(output_))
+    #rec_cost = tf.reduce_mean(tf.square(tf.stop_gradient(h_input_to_dae_) - output_),axis=1,keep_dims=True)
+    cost = tf.sqrt(tf.reduce_mean(tf.square(tf.stop_gradient(h_input_to_dae_) - output_)))
+
+    if autoenc_x:
+        cost += tf.sqrt(tf.reduce_mean(tf.square(x - xrec)))
+
+    #h2 = model.layers['a2'].fprop(model.layers['l2'].fprop(tf.concat([output_],axis=1)))
 
     presoftmax_ = model.layers['logits'].fprop(output_)
     preds = model.layers['probs'].fprop(presoftmax_)
-    cost = tf.sqrt(tf.reduce_mean(tf.square(h_input_to_dae_ - output_)))
 
     if return_state_map:
         return {'logits' : presoftmax_, 'probs' : preds}
@@ -94,34 +114,39 @@ def get_output(model, x, encoder, encoder_b, decoder_b,return_state_map=False):
         return cost, preds
 
 class MLP_Classifier_Condrec(Model):
-    def __init__(self, input_shape, encoder, encoder_b, decoder_b):
+    def __init__(self, input_shape, encoder, encoder_b, decoder_b, autoencoder_params):
         super(MLP_Classifier_Condrec, self).__init__()
 
         self.layers = {}
 
         self.layers['l1'] = Linear(512)
-        self.layers['a1'] = ReLU()
+        #self.layers['a1'] = LeakyReLU()
+
+        self.layers['l2'] = Linear(512)
+        self.layers['a2'] = ReLU()
 
         self.layers['logits'] = Linear(10)
         self.layers['probs'] = Softmax()
 
         self.layers['l1'].set_input_shape(input_shape)
+        #self.layers['l2'].set_input_shape((None,512))
         self.layers['logits'].set_input_shape((None, 512))
 
         self.encoder = encoder
         self.encoder_b = encoder_b
         self.decoder_b = decoder_b
+        self.autoencoder_params = autoencoder_params
 
     def fprop(self, x, set_ref=False):
-        states = get_output(self, x, self.encoder, self.encoder_b, self.decoder_b,return_state_map=True)
+        states = get_output(self, x, self.encoder, self.encoder_b, self.decoder_b, self.autoencoder_params, return_state_map=True)
 
         return states
 
-def make_basic_fc(encoder, encoder_b, decoder_b,nb_classes=10,
+def make_basic_fc(encoder, encoder_b, decoder_b,autoencoder_params,nb_classes=10,
                   input_shape=(None, 784)):
     print("Using classifier module defined in condrec module")
 
-    model = MLP_Classifier_Condrec(input_shape, encoder, encoder_b, decoder_b)
+    model = MLP_Classifier_Condrec(input_shape, encoder, encoder_b, decoder_b,autoencoder_params)
 
     return model
 
