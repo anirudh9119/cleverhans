@@ -32,6 +32,9 @@ def corrupt(x):
 def gaussian_corrupt(x,std):
     return x + tf.cast(tf.random_normal(shape=tf.shape(x),stddev=std), tf.float32)
 
+def compute_rec_error(hpre,hpost):
+    return tf.sqrt(tf.reduce_mean(tf.square(tf.stop_gradient(hpre) - hpost)))
+
 def autoencoder(dimensions=[512, 256, 64]):
     """Build a deep denoising autoencoder w/ tied weights.
     """
@@ -84,6 +87,14 @@ def autoencoder(dimensions=[512, 256, 64]):
             #'corrupt_prob': corrupt_prob,
             #'cost': cost}
 
+def h_autoencoder(inp,encoder,encoder_b,decoder_b,autoencoder_params):
+
+    output = tf.nn.tanh(tf.matmul(inp, encoder[0]) + encoder_b[0])
+    output_ = tf.nn.tanh(tf.matmul(output, tf.transpose(encoder[0])) + decoder_b[0])
+
+    return output_
+
+
 def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False):
     #x= tf.reshape(x, [-1, 784])
 
@@ -94,11 +105,10 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
         xuse = x
 
     h_input_to_dae_ = tf.nn.relu(model.layers['l1'].fprop(xuse))
-    output = tf.nn.tanh(tf.matmul(h_input_to_dae_, encoder[0]) + encoder_b[0])
-    output_ = tf.nn.tanh(tf.matmul(output, tf.transpose(encoder[0])) + decoder_b[0])
-
-    #rec_cost = tf.reduce_mean(tf.square(tf.stop_gradient(h_input_to_dae_) - output_),axis=1,keep_dims=True)
-    cost = tf.sqrt(tf.reduce_mean(tf.square(tf.stop_gradient(h_input_to_dae_) - output_)))
+    
+    output_ = h_autoencoder(h_input_to_dae_,encoder,encoder_b,decoder_b,autoencoder_params)
+    
+    output_blockin = h_autoencoder(tf.stop_gradient(h_input_to_dae_),encoder,encoder_b,decoder_b,autoencoder_params)
 
     if autoenc_x:
         cost += tf.sqrt(tf.reduce_mean(tf.square(x - xrec)))
@@ -111,7 +121,7 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
     if return_state_map:
         return {'logits' : presoftmax_, 'probs' : preds}
     else:
-        return cost, preds
+        return preds,h_input_to_dae_,output_blockin
 
 class MLP_Classifier_Condrec(Model):
     def __init__(self, input_shape, encoder, encoder_b, decoder_b, autoencoder_params):

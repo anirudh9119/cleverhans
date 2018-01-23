@@ -29,7 +29,7 @@ FLAGS = flags.FLAGS
 #from classifier_basic import autoencoder, get_output
 #from autoencoder_pspace import autoencoder, get_output
 #from autoencoder_condrec import autoencoder, get_output, make_basic_fc
-from autoencoder_modelmatch import autoencoder, get_output, make_basic_fc
+from autoencoder_modelmatch import autoencoder, get_output, make_basic_fc, compute_rec_error
 
 def create_adv_by_name(model, x, attack_type, sess, dataset, y=None, **kwargs):
     attack_names = {'FGSM': FastGradientMethod,
@@ -139,7 +139,9 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         x= tf.reshape(x, [-1, 784])
         encoder, encoder_b, decoder_b, autoencoder_params, corrupt_prob = autoencoder(dimensions=[512, 128])
         model = make_basic_fc(encoder, encoder_b, decoder_b, autoencoder_params)
-        cost, preds = get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params)
+        preds,hpreclean,hpostclean = get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params)
+
+        cost = compute_rec_error(hpreclean,hpostclean)
 
         #preds = model.get_probs(x)
 
@@ -168,13 +170,15 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
         adv_x = create_adv_by_name(model, x, attack_name, sess, 'mnist')
         adv_x = tf.reshape(adv_x, [-1, 784])
-        cost, preds_adv = get_output(model, adv_x, encoder, encoder_b, decoder_b, autoencoder_params)
+        preds_adv,hpreadv,hpostadv = get_output(model, adv_x, encoder, encoder_b, decoder_b, autoencoder_params)
+
+        cost = compute_rec_error(hpreadv,hpostadv)
 
         # Evaluate the accuracy of the MNIST model on adversarial examples
         eval_par = {'batch_size': batch_size}
         acc,rec_error = model_eval_2(sess, x, y, corrupt_prob, preds_adv, X_test, Y_test, rec_cost=cost, args=eval_par)
         print('Test accuracy on adversarial examples: %0.4f\n' % acc)
-        print('rec error on adversarial examples: %0.4f\n' % rec_error)
+        print('rec error adv->adv on adversarial examples: %0.4f\n' % rec_error)
         report.clean_train_adv_eval = acc
 
         # Calculate training error
@@ -209,10 +213,13 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         preds_2_adv = model_2(adv_x_2)
     else:
         encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, corrupt_prob_2 = autoencoder(dimensions=[512, 320])
-        cost_2, preds_2 = get_output(model_2, x, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params)
+        preds_2,hpreclean,hpostclean = get_output(model_2, x, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params)
+        cost_2 = compute_rec_error(hpreclean,hpostclean)
         if not backprop_through_attack:
             adv_x_2 = tf.stop_gradient(adv_x_2)
-        cost_2_adv, preds_2_adv = get_output(model_2, adv_x_2, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params)
+        preds_2_adv,hpreadv,hpostadv = get_output(model_2, adv_x_2, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params)
+        cost_2_adv = compute_rec_error(hpreclean,hpostadv)
+
 
     def evaluate_2():
         # Accuracy of adversarially trained model on legitimate test inputs
@@ -220,19 +227,19 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         accuracy,rec_error = model_eval_2(sess, x, y, corrupt_prob_2, preds_2, X_test, Y_test,rec_cost=cost_2,
                               args=eval_params)
         print('Test accuracy on legitimate examples: %0.4f' % accuracy)
-        print('Test rec error on legitimate examples: %0.4f' % rec_error)
+        print('Test rec error clean->clean on legitimate examples: %0.4f' % rec_error)
         report.adv_train_clean_eval = accuracy
 
         # Accuracy of the adversarially trained model on adversarial examples
         accuracy, rec_error = model_eval_2(sess, x, y, corrupt_prob_2, preds_2_adv, X_test, Y_test, rec_cost=cost_2_adv,
                               args=eval_params)
         print('Test accuracy on adversarial examples: %0.4f' % accuracy)
-        print('Test rec error on adversarial examples: %0.4f' % rec_error)
+        print('Test rec error adv->clean on adversarial examples: %0.4f' % rec_error)
         report.adv_train_adv_eval = accuracy
 
     # Perform and evaluate adversarial training
     model_train_2(sess, x, y, corrupt_prob_2, preds_2, X_train, Y_train,
-                rec_cost=cost_2, predictions_adv=preds_2_adv, evaluate=evaluate_2,
+                rec_cost=cost_2+cost_2_adv, predictions_adv=preds_2_adv, evaluate=evaluate_2,
                 args=train_params, rng=rng)
 
     # Calculate training errors
