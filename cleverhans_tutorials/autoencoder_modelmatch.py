@@ -29,7 +29,7 @@ def corrupt(x):
                                                maxval=2,
                                                dtype=tf.int32), tf.float32))
 
-def gaussian_corrupt(x,std):
+def gaussian_noise(x,std=0.1):
     return x + tf.cast(tf.random_normal(shape=tf.shape(x),stddev=std), tf.float32)
 
 def compute_rec_error(hpre,hpost):
@@ -106,9 +106,9 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
 
     h_input_to_dae_ = tf.nn.relu(model.layers['l1'].fprop(xuse))
     
-    output_ = h_autoencoder(h_input_to_dae_,encoder,encoder_b,decoder_b,autoencoder_params)
+    output_ = h_autoencoder(gaussian_noise(h_input_to_dae_),encoder,encoder_b,decoder_b,autoencoder_params)
     
-    output_blockin = h_autoencoder(tf.stop_gradient(h_input_to_dae_),encoder,encoder_b,decoder_b,autoencoder_params)
+    output_blockin = h_autoencoder(gaussian_noise(tf.stop_gradient(h_input_to_dae_)),encoder,encoder_b,decoder_b,autoencoder_params)
 
     if autoenc_x:
         cost += tf.sqrt(tf.reduce_mean(tf.square(x - xrec)))
