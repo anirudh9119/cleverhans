@@ -183,9 +183,9 @@ def model_train(sess, x, y, predictions, X_train, Y_train, save=False,
     return True
 
 
-def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, save=False,
+def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, dataset, save=False,
                 predictions_adv=None, rec_cost=None, init_all=True, evaluate=None,
-                verbose=True, feed=None, args=None, rng=None, rec_loss_weight=100.0):
+                verbose=True, feed=None, args=None, rng=None, rec_loss_weight=1.0):
     """
     Train a TF graph
     :param sess: TF session to use when training the graph
@@ -233,6 +233,11 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, save=
                       " For backward compatibility, log_level was set to"
                       " logging.WARNING (30).")
 
+    if dataset == "cifar10":
+        num_features = 3*32*32
+    elif dataset == "mnist":
+        num_features = 28*28
+
     if rng is None:
         rng = np.random.RandomState()
 
@@ -272,7 +277,7 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, save=
                     batch, len(X_train), args.batch_size)
 
 
-                feed_dict = {x: X_train[index_shuf[start:end]].reshape([args.batch_size, 784]),
+                feed_dict = {x: X_train[index_shuf[start:end]].reshape([args.batch_size, num_features]),
                              y: Y_train[index_shuf[start:end]],
                              corrupt_prob: [1]}
                 if feed is not None:
@@ -377,7 +382,7 @@ def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
     return accuracy
 
 def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None, rec_cost=None,
-               feed=None, args=None):
+               feed=None, args=None,x_shape_in=[-1,32*32*3]):
     """
     Compute the accuracy of a TF model on some data
     :param sess: TF session to use when training the graph
@@ -438,8 +443,8 @@ def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None
             # The last batch may be smaller than all others. This should not
             # affect the accuarcy disproportionately.
             cur_batch_size = end - start
-            X_cur = X_cur.reshape([-1, 784])
-            X_cur[:cur_batch_size] = X_test[start:end].reshape([-1, 784])
+            X_cur = X_cur.reshape(x_shape_in)
+            X_cur[:cur_batch_size] = X_test[start:end].reshape(x_shape_in)
             #X_cur[:cur_batch_size] = X_test[start:end]
             Y_cur[:cur_batch_size] = Y_test[start:end]
             #X_cur = X_cur.reshape([args.batch_size, 784])
