@@ -12,7 +12,7 @@ import logging
 from cleverhans.utils_mnist import data_mnist
 from cleverhans.utils_tf import model_train, model_train_2, model_eval, model_eval_2
 from cleverhans.attacks import FastGradientMethod
-from cleverhans_tutorials.tutorial_models import Linear, ReLU, Softmax, MLP
+from cleverhans_tutorials.tutorial_models import Linear, ReLU, Softmax, MLP, Conv2D
 from cleverhans.utils import AccuracyReport, set_log_level
 from cleverhans.model import Model
 
@@ -86,6 +86,10 @@ def autoencoder(dataset,dimensions=[512, 256, 64]):
     #cost = tf.sqrt(tf.reduce_mean(tf.square(y - x)))
     
 
+    autoencoder_params['e0W'] = tf.Variable(tf.random_uniform([512, 512],-1.0 / math.sqrt(512),1.0 / math.sqrt(512)))
+    autoencoder_params['e0b'] = tf.Variable(0*tf.random_uniform([512],-1.0 / math.sqrt(512),1.0 / math.sqrt(512)))
+    autoencoder_params['d0b'] = tf.Variable(0*tf.random_uniform([512],-1.0 / math.sqrt(512),1.0 / math.sqrt(512)))
+
     autoencoder_params['x_w1'] = tf.Variable(tf.random_uniform([num_features, 512],-1.0 / math.sqrt(512),1.0 / math.sqrt(512)))
     autoencoder_params['x_w2'] = tf.Variable(tf.random_uniform([512, 784],-1.0 / math.sqrt(512),1.0 / math.sqrt(512)))
 
@@ -96,11 +100,27 @@ def autoencoder(dataset,dimensions=[512, 256, 64]):
 
 def h_autoencoder(inp,encoder,encoder_b,decoder_b,autoencoder_params):
 
-    output = tf.nn.tanh(tf.matmul(inp, encoder[0]) + encoder_b[0])
-    output_ = tf.nn.tanh(tf.matmul(output, tf.transpose(encoder[0])) + decoder_b[0])
+    #output = tf.nn.tanh(tf.matmul(inp, encoder[0]) + encoder_b[0])
+    #output_ = tf.nn.tanh(tf.matmul(output, tf.transpose(encoder[0])) + decoder_b[0])
+
+    ap = autoencoder_params
+
+    output = tf.nn.leaky_relu(tf.matmul(inp, ap['e0W']) + ap['e0b'])
+    output_ = tf.nn.leaky_relu(tf.matmul(output, tf.transpose(ap['e0W'])) + ap['d0b'])
 
     return output_
 
+#mnist
+
+#dataset_use = "cifar10"
+dataset_use = "mnist"
+
+if dataset_use == "cifar10":
+    lens = [32,16,8,4]
+    fils = [3,128,256,512]
+elif dataset_use == "mnist":
+    lens = [28,14,7,4]
+    fils = [1,64,128,256]
 
 def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False):
     #x= tf.reshape(x, [-1, 784])
@@ -111,11 +131,20 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
     else:
         xuse = x
 
-    h_input_to_dae_ = tf.nn.relu(model.layers['l1'].fprop(xuse))
-    
+    ximg = tf.reshape(xuse, [-1, lens[0],lens[0],fils[0]])
+
+    c1 = tf.nn.leaky_relu(model.layers['lc1'].fprop(ximg))
+    c2 = tf.nn.leaky_relu(model.layers['lc2'].fprop(c1))
+    c3 = tf.nn.leaky_relu(model.layers['lc3'].fprop(c2))
+    c3 = tf.reshape(c3, [-1,fils[3]*lens[3]*lens[3]])
+
+    h_input_to_dae_ = tf.nn.leaky_relu(model.layers['l1'].fprop(c3))
+
     output_ = h_autoencoder(gaussian_noise(h_input_to_dae_),encoder,encoder_b,decoder_b,autoencoder_params)
-    
     output_blockin = h_autoencoder(gaussian_noise(tf.stop_gradient(h_input_to_dae_)),encoder,encoder_b,decoder_b,autoencoder_params)
+
+    #output_blockin = h_input_to_dae_*0.0
+    #output_ = h_input_to_dae_
 
     if autoenc_x:
         cost += tf.sqrt(tf.reduce_mean(tf.square(x - xrec)))
@@ -136,6 +165,10 @@ class MLP_Classifier_Condrec(Model):
 
         self.layers = {}
 
+        self.layers['lc1'] = Conv2D(fils[1], (8, 8), (2, 2), "SAME")
+        self.layers['lc2'] = Conv2D(fils[2], (5,5), (2,2), "SAME")
+        self.layers['lc3'] = Conv2D(fils[3], (3,3), (2,2), "SAME")
+
         self.layers['l1'] = Linear(512)
         #self.layers['a1'] = LeakyReLU()
 
@@ -145,7 +178,10 @@ class MLP_Classifier_Condrec(Model):
         self.layers['logits'] = Linear(10)
         self.layers['probs'] = Softmax()
 
-        self.layers['l1'].set_input_shape(input_shape)
+        self.layers['lc1'].set_input_shape((None,lens[0],lens[0],fils[0]))
+        self.layers['lc2'].set_input_shape((None,lens[1],lens[1],fils[1]))
+        self.layers['lc3'].set_input_shape((None,lens[2],lens[2],fils[2]))
+        self.layers['l1'].set_input_shape((None,lens[3]*lens[3]*fils[3]))
         #self.layers['l2'].set_input_shape((None,512))
         self.layers['logits'].set_input_shape((None, 512))
 
