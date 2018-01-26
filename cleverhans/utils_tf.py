@@ -237,14 +237,18 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, datas
         num_features = 3*32*32
     elif dataset == "mnist":
         num_features = 28*28
+    elif dataset == "svhn":
+        num_features = 3*32*32
 
     if rng is None:
         rng = np.random.RandomState()
 
+    rec_cost_total = tf.sqrt(tf.reduce_mean(rec_cost))
+
     # Define loss
-    loss = model_loss(y, predictions) + rec_cost * rec_loss_weight
+    loss = model_loss(y, predictions) + rec_cost_total * rec_loss_weight
     if predictions_adv is not None:
-        loss = (loss + model_loss(y, predictions_adv) + rec_cost * rec_loss_weight) / 3
+        loss = (loss + model_loss(y, predictions_adv) + rec_cost_total * rec_loss_weight) / 3
 
     train_step = tf.train.AdamOptimizer(learning_rate=args.learning_rate)
     train_step = train_step.minimize(loss)
@@ -420,6 +424,8 @@ def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None
         rec_error = None
     else:
         rec_error = 0.0
+        r_true = []
+        r_false = []
 
     with sess.as_default():
         # Compute number of batches
@@ -454,8 +460,18 @@ def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None
             cur_corr_preds = correct_preds.eval(feed_dict=feed_dict)
 
             if rec_cost is not None:
+                rec_cost_total = tf.sqrt(tf.reduce_mean(rec_cost))
                 rec_cost_eval = rec_cost.eval(feed_dict=feed_dict)
-                rec_error += rec_cost_eval
+                rec_cost_total_eval = rec_cost_total.eval(feed_dict=feed_dict)
+                rec_error += rec_cost_total_eval
+
+                for j in range(0,128):
+                    if cur_corr_preds[j] == True:
+                        r_true.append(rec_cost_eval[j])
+                    else:
+                        r_false.append(rec_cost_eval[j])
+
+
 
             accuracy += cur_corr_preds[:cur_batch_size].sum()
 
@@ -467,7 +483,11 @@ def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None
             rec_error *= 100.0
             rec_error /= len(X_test)
 
-    return accuracy, rec_error
+    
+    rec_cost_correct = sum(r_true)/len(r_true)
+    rec_cost_false = sum(r_false)/len(r_false)
+
+    return accuracy, rec_error, rec_cost_correct, rec_cost_false
 
 
 def tf_model_load(sess, file_path=None):

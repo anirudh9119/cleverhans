@@ -33,7 +33,7 @@ def gaussian_noise(x,std=0.1):
     return x + tf.cast(tf.random_normal(shape=tf.shape(x),stddev=std), tf.float32)
 
 def compute_rec_error(hpre,hpost):
-    return tf.sqrt(tf.reduce_mean(tf.square(tf.stop_gradient(hpre) - hpost)))
+    return tf.reduce_mean(tf.square(tf.stop_gradient(hpre) - hpost),axis=1)
 
 def autoencoder(dataset,dimensions=[512, 256, 64]):
     """Build a deep denoising autoencoder w/ tied weights.
@@ -43,7 +43,9 @@ def autoencoder(dataset,dimensions=[512, 256, 64]):
         num_features = 32*32*3
     elif dataset == "mnist":
         num_features = 28*28
-    
+    elif dataset == "svhn":
+        num_features = 32*32*3
+
     # input to the network
     h = tf.placeholder(tf.float32, [None, dimensions[0]], name='h')
 
@@ -113,6 +115,7 @@ def h_autoencoder(inp,encoder,encoder_b,decoder_b,autoencoder_params):
 #mnist
 
 #dataset_use = "cifar10"
+#dataset_use = "svhn"
 dataset_use = "mnist"
 
 if dataset_use == "cifar10":
@@ -121,6 +124,9 @@ if dataset_use == "cifar10":
 elif dataset_use == "mnist":
     lens = [28,14,7,4]
     fils = [1,64,128,256]
+elif dataset_use == "svhn":
+    lens = [32,16,8,4]
+    fils = [3,32,64,128]
 
 def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False):
     #x= tf.reshape(x, [-1, 784])

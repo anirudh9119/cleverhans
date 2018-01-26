@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 This tutorial shows how to generate some simple adversarial examples
 and train a model using adversarial training using nothing but pure
@@ -17,6 +18,7 @@ import logging
 
 from cleverhans.utils_mnist import data_mnist
 from cleverhans.utils_cifar10 import data_cifar10
+from cleverhans.utils_svhn import data_svhn
 from cleverhans.utils_tf import model_train_2, model_eval_2
 from cleverhans.attacks import FastGradientMethod, MadryEtAl
 from cleverhans.utils import AccuracyReport, set_log_level
@@ -46,7 +48,9 @@ def create_adv_by_name(model, x, attack_type, sess, dataset, y=None, **kwargs):
         'mnist': {'eps': 1.0, 'eps_iter': 1.2, 'clip_min': 0., 'clip_max': 1.,
                   'nb_iter': 40},
         'cifar10': {'eps': 8./255, 'eps_iter': 0.01, 'clip_min': 0.,
-                    'clip_max': 1., 'nb_iter': 20}
+                    'clip_max': 1., 'nb_iter': 20},
+        'svhn': {'eps': 1.0, 'eps_iter': 1.2, 'clip_min': 0., 'clip_max': 1.,
+                    'nb_iter': 40},
     }
 
     with tf.variable_scope(attack_type):
@@ -100,6 +104,9 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
     if dataset == 'cifar10':
         train_end = 50000
+    elif dataset == "svhn":
+        train_end = 604388
+        test_end = 26032
 
     # Object used to keep track of (and return) key accuracies
     report = AccuracyReport()
@@ -127,6 +134,10 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         shape_in = [-1,28*28]
     elif dataset == "cifar10":
         X_train, Y_train, X_test, Y_test = data_cifar10()
+        num_features = 32*32*3
+        shape_in = [-1,32*32*3]
+    elif dataset == "svhn":
+        X_train, Y_train, X_test, Y_test = data_svhn()
         num_features = 32*32*3
         shape_in = [-1,32*32*3]
     else:
@@ -165,12 +176,13 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
             # Evaluate the accuracy of the MNIST model on legitimate test
             # examples
             eval_params = {'batch_size': batch_size}
-            acc,rec_error = model_eval_2(
+            acc,rec_error,re_true,re_false = model_eval_2(
                 sess, x, y, corrupt_prob, preds, X_test, Y_test, args=eval_params, rec_cost=cost, x_shape_in=shape_in)
             report.clean_train_clean_eval = acc
             assert X_test.shape[0] == test_end - test_start, X_test.shape
             print('Test accuracy on legitimate examples: %0.4f' % acc)
             print('rec error on legitimate examples: %0.4f' % rec_error)
+            print('rec error on legitimate examples corr class (%0.4f) and incorr. class (%0.4f)' % (re_true,re_false))
         model_train_2(sess, x, y, corrupt_prob, preds, X_train, Y_train, dataset, evaluate=evaluate,rec_cost=cost,
                     args=train_params, rng=rng)
 
@@ -192,9 +204,10 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
         # Evaluate the accuracy of the MNIST model on adversarial examples
         eval_par = {'batch_size': batch_size}
-        acc,rec_error = model_eval_2(sess, x, y, corrupt_prob, preds_adv, X_test, Y_test, rec_cost=cost, args=eval_par, x_shape_in=shape_in)
+        acc,rec_error,re_true,re_false = model_eval_2(sess, x, y, corrupt_prob, preds_adv, X_test, Y_test, rec_cost=cost, args=eval_par, x_shape_in=shape_in)
         print('Test accuracy on adversarial examples: %0.4f\n' % acc)
         print('rec error adv->adv on adversarial examples: %0.4f\n' % rec_error)
+        print('rec error adv->adv examples corr class (%0.4f) and incorr. class (%0.4f)' % (re_true,re_false))
         report.clean_train_adv_eval = acc
 
         # Calculate training error
@@ -240,17 +253,19 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     def evaluate_2():
         # Accuracy of adversarially trained model on legitimate test inputs
         eval_params = {'batch_size': batch_size}
-        accuracy,rec_error = model_eval_2(sess, x, y, corrupt_prob_2, preds_2, X_test, Y_test,rec_cost=cost_2,
+        accuracy,rec_error,re_true,re_false = model_eval_2(sess, x, y, corrupt_prob_2, preds_2, X_test, Y_test,rec_cost=cost_2,
                               args=eval_params,x_shape_in=shape_in)
         print('Test accuracy on legitimate examples: %0.4f' % accuracy)
         print('Test rec error clean->clean on legitimate examples: %0.4f' % rec_error)
+        print('rec error on legitimate examples corr class (%0.4f) and incorr. class (%0.4f)' % (re_true,re_false))
         report.adv_train_clean_eval = accuracy
 
         # Accuracy of the adversarially trained model on adversarial examples
-        accuracy, rec_error = model_eval_2(sess, x, y, corrupt_prob_2, preds_2_adv, X_test, Y_test, rec_cost=cost_2_adv,
+        accuracy, rec_error,re_true,re_false = model_eval_2(sess, x, y, corrupt_prob_2, preds_2_adv, X_test, Y_test, rec_cost=cost_2_adv,
                               args=eval_params,x_shape_in=shape_in)
         print('Test accuracy on adversarial examples: %0.4f' % accuracy)
         print('Test rec error adv->clean on adversarial examples: %0.4f' % rec_error)
+        print('rec error adv->clean corr class (%0.4f) and incorr. class (%0.4f)' % (re_true,re_false))
         report.adv_train_adv_eval = accuracy
 
     # Perform and evaluate adversarial training
@@ -284,7 +299,7 @@ def main(argv=None):
 
 if __name__ == '__main__':
     flags.DEFINE_integer('nb_filters', 64, 'Model size multiplier')
-    flags.DEFINE_integer('nb_epochs', 20, 'Number of epochs to train model')
+    flags.DEFINE_integer('nb_epochs', 3, 'Number of epochs to train model')
     flags.DEFINE_integer('batch_size', 128, 'Size of training batches')
     flags.DEFINE_float('learning_rate', 0.001, 'Learning rate for training')
     flags.DEFINE_bool('clean_train', True, 'Train on clean examples')
