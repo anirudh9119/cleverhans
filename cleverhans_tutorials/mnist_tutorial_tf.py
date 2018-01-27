@@ -31,8 +31,8 @@ FLAGS = flags.FLAGS
 #from classifier_basic import autoencoder, get_output
 #from autoencoder_pspace import autoencoder, get_output
 #from autoencoder_condrec import autoencoder, get_output, make_basic_fc
-#from autoencoder_modelmatch import autoencoder, get_output, make_basic, compute_rec_error
-from conv_autoencoder_mm import autoencoder, get_output, make_basic, compute_rec_error
+from autoencoder_modelmatch import autoencoder, get_output, make_basic, compute_rec_error
+#from conv_autoencoder_mm import autoencoder, get_output, make_basic, compute_rec_error
 
 
 def create_adv_by_name(model, x, attack_type, sess, dataset, y=None, **kwargs):

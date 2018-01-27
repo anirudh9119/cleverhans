@@ -33,7 +33,7 @@ def gaussian_noise(x,std=0.1):
     return x + tf.cast(tf.random_normal(shape=tf.shape(x),stddev=std), tf.float32)
 
 def compute_rec_error(hpre,hpost):
-    return tf.sqrt(tf.reduce_mean(tf.square(tf.stop_gradient(hpre) - hpost)))
+    return tf.reduce_mean(tf.square(tf.stop_gradient(hpre) - hpost),axis=1)
 
 def autoencoder(dataset,dimensions=[512, 256, 64]):
     """Build a deep denoising autoencoder w/ tied weights.
@@ -102,7 +102,7 @@ def h_autoencoder(inp,encoder,encoder_b,decoder_b,autoencoder_params):
     return output_
 
 
-def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False):
+def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False,scope=""):
     #x= tf.reshape(x, [-1, 784])
 
     if autoenc_x:
