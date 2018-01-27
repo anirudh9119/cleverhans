@@ -185,7 +185,7 @@ def model_train(sess, x, y, predictions, X_train, Y_train, save=False,
 
 def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, dataset, save=False,
                 predictions_adv=None, rec_cost=None, init_all=True, evaluate=None,
-                verbose=True, feed=None, args=None, rng=None, rec_loss_weight=1.0):
+                verbose=True, feed=None, args=None, rng=None, exp_name="model_train", rec_loss_weight=1.0):
     """
     Train a TF graph
     :param sess: TF session to use when training the graph
@@ -250,7 +250,7 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, datas
     if predictions_adv is not None:
         loss = (loss + model_loss(y, predictions_adv) + rec_cost_total * rec_loss_weight) / 3
 
-    train_step = tf.train.AdamOptimizer(learning_rate=args.learning_rate)
+    train_step = tf.train.AdamOptimizer(learning_rate=args.learning_rate,name=exp_name)
     train_step = train_step.minimize(loss)
 
     with sess.as_default():

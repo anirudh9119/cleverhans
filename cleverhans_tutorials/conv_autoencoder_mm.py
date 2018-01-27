@@ -16,8 +16,19 @@ from cleverhans_tutorials.tutorial_models import Linear, ReLU, Softmax, MLP, Con
 from cleverhans.utils import AccuracyReport, set_log_level
 from cleverhans.model import Model
 
+from cleverhans.resnet_model import batch_norm_relu, building_block, block_layer
+
 import math
 FLAGS = flags.FLAGS
+
+class empty_scope():
+     def __init__(self):
+         pass
+     def __enter__(self):
+         pass
+     def __exit__(self, type, value, traceback):
+         pass
+
 
 print("Importing autoencoder classifier!")
 
@@ -128,8 +139,7 @@ elif dataset_use == "svhn":
     lens = [32,16,8,4]
     fils = [3,32,64,128]
 
-def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False):
-    #x= tf.reshape(x, [-1, 784])
+def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False,scope=""):
 
     if autoenc_x:
         xa = tf.nn.leaky_relu(tf.matmul(x, autoencoder_params['x_w1']))
@@ -139,9 +149,33 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
 
     ximg = tf.reshape(xuse, [-1, lens[0],lens[0],fils[0]])
 
-    c1 = tf.nn.leaky_relu(model.layers['lc1'].fprop(ximg))
-    c2 = tf.nn.leaky_relu(model.layers['lc2'].fprop(c1))
-    c3 = tf.nn.leaky_relu(model.layers['lc3'].fprop(c2))
+    #c1 = tf.nn.leaky_relu(model.layers['lc1'].fprop(ximg))
+ 
+    reuse = tf.AUTO_REUSE
+
+    if scope == "":
+        vscope = empty_scope()
+    else:
+        vscope = tf.variable_scope(scope)
+
+    with vscope:
+        c1 = tf.nn.leaky_relu(tf.layers.conv2d(
+        inputs=ximg, filters=64, kernel_size=(8,8), strides=(2,2),
+        padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c1_conv',use_bias=True))
+
+        c2 = tf.nn.leaky_relu(tf.layers.conv2d(
+        inputs=c1, filters=256, kernel_size=(5,5), strides=(2,2),
+        padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c2_conv',use_bias=True))
+
+        #c3 = tf.nn.leaky_relu(tf.layers.conv2d(
+        #inputs=c2, filters=256, kernel_size=(3,3), strides=(2,2),
+        #padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c3_conv',use_bias=True))
+
+        c3 = tf.nn.leaky_relu(block_layer(c2, filters=256, block_fn=building_block, blocks=10, is_training=True,strides=(2,2),data_format='channels_last',name='c3'))
+
+    #c2 = tf.nn.leaky_relu(model.layers['lc2'].fprop(c1))
+    #c3 = tf.nn.leaky_relu(model.layers['lc3'].fprop(c2))
+
     c3 = tf.reshape(c3, [-1,fils[3]*lens[3]*lens[3]])
 
     h_input_to_dae_ = tf.nn.leaky_relu(model.layers['l1'].fprop(c3))

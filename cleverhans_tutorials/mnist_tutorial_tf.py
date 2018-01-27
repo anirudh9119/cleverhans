@@ -166,7 +166,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         x= tf.reshape(x, [-1, num_features])
         encoder, encoder_b, decoder_b, autoencoder_params, corrupt_prob = autoencoder(dataset,dimensions=[512, 128])
         model = make_basic(encoder, encoder_b, decoder_b, autoencoder_params,input_shape=(None,num_features))
-        preds,hpreclean,hpostclean = get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params)
+        preds,hpreclean,hpostclean = get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,scope=attack_name)
 
         cost = compute_rec_error(hpreclean,hpostclean)
 
@@ -198,7 +198,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
         adv_x = create_adv_by_name(model, x, attack_name, sess, 'mnist')
         adv_x = tf.reshape(adv_x, [-1, num_features])
-        preds_adv,hpreadv,hpostadv = get_output(model, adv_x, encoder, encoder_b, decoder_b, autoencoder_params)
+        preds_adv,hpreadv,hpostadv = get_output(model, adv_x, encoder, encoder_b, decoder_b, autoencoder_params,scope=attack_name)
 
         cost = compute_rec_error(hpreadv,hpostadv)
 
@@ -242,11 +242,11 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         preds_2_adv = model_2(adv_x_2)
     else:
         encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, corrupt_prob_2 = autoencoder(dataset, dimensions=[512, 320])
-        preds_2,hpreclean,hpostclean = get_output(model_2, x, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params)
+        preds_2,hpreclean,hpostclean = get_output(model_2, x, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,scope=attack_name)
         cost_2 = compute_rec_error(hpreclean,hpostclean)
         if not backprop_through_attack:
             adv_x_2 = tf.stop_gradient(adv_x_2)
-        preds_2_adv,hpreadv,hpostadv = get_output(model_2, adv_x_2, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params)
+        preds_2_adv,hpreadv,hpostadv = get_output(model_2, adv_x_2, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,scope=attack_name)
         cost_2_adv = compute_rec_error(hpreclean,hpostadv)
 
 
@@ -271,7 +271,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     # Perform and evaluate adversarial training
     model_train_2(sess, x, y, corrupt_prob_2, preds_2, X_train, Y_train, dataset,
                 rec_cost=cost_2+cost_2_adv, predictions_adv=preds_2_adv, evaluate=evaluate_2,
-                args=train_params, rng=rng)
+                args=train_params, rng=rng,exp_name="model_train_against_adv")
 
     # Calculate training errors
     if testing:
@@ -289,8 +289,8 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 def main(argv=None):
     mnist_tutorial(nb_epochs=FLAGS.nb_epochs, batch_size=FLAGS.batch_size,
                    learning_rate=FLAGS.learning_rate,
-                   attack_name='MadryEtAl', #'FGSM'
-                   #attack_name='FGSM',
+                   #attack_name='MadryEtAl', #'FGSM'
+                   attack_name='FGSM',
                    clean_train=FLAGS.clean_train,
                    backprop_through_attack=FLAGS.backprop_through_attack,
                    nb_filters=FLAGS.nb_filters,
