@@ -102,7 +102,7 @@ def h_autoencoder(inp,encoder,encoder_b,decoder_b,autoencoder_params):
     return output_
 
 
-def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False,scope=""):
+def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False,scope="",is_training=True):
     #x= tf.reshape(x, [-1, 784])
 
     if autoenc_x:

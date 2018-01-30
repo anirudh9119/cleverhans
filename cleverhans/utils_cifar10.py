@@ -3,6 +3,7 @@ import keras
 from keras.datasets import cifar10
 import numpy as np
 from keras.utils import np_utils
+import tensorflow as tf
 
 def data_cifar10():
     """
@@ -26,8 +27,22 @@ def data_cifar10():
         X_test = X_test.reshape(X_test.shape[0], img_rows, img_cols, 3)
     X_train = X_train.astype('float32')
     X_test = X_test.astype('float32')
+
+    import numpy.random as rng
+
+    tpermutation = rng.permutation(X_test.shape[0])
+
+    X_test = X_test[tpermutation]
+    y_test = y_test[tpermutation]
+
+    permutation = rng.permutation(X_train.shape[0])
+
+    X_train = X_train[permutation]
+    y_train = y_train[permutation]
+
     X_train /= 255
     X_test /= 255
+    
     print('X_train shape:', X_train.shape)
     print(X_train.shape[0], 'train samples')
     print(X_test.shape[0], 'test samples')
@@ -36,6 +51,32 @@ def data_cifar10():
     Y_train = np_utils.to_categorical(y_train, nb_classes)
     Y_test = np_utils.to_categorical(y_test, nb_classes)
     return X_train, Y_train, X_test, Y_test
+
+def preprocess_image(image, is_training):
+
+    _HEIGHT=32
+    _WIDTH=32
+    _DEPTH=3
+
+    if is_training:
+        """Preprocess a single image of layout [height, width, depth]."""
+        # Resize the image to add four extra pixels on each side.
+        image = tf.image.resize_image_with_crop_or_pad(
+            image, _HEIGHT + 8, _WIDTH + 8)
+
+        # Randomly crop a [_HEIGHT, _WIDTH] section of the image.
+        image = tf.random_crop(image, [_HEIGHT, _WIDTH, _DEPTH])
+
+        # Randomly flip the image horizontally.
+        image = tf.image.random_flip_left_right(image)
+
+        # Subtract off the mean and divide by the variance of the pixels.
+    image = tf.image.per_image_standardization(image)
+
+    return image
+
+
+
 
 
 

@@ -124,6 +124,9 @@ def model_train(sess, x, y, predictions, X_train, Y_train, save=False,
     if predictions_adv is not None:
         loss = (loss + model_loss(y, predictions_adv)) / 2
 
+    
+
+
     train_step = tf.train.AdamOptimizer(learning_rate=args.learning_rate)
     train_step = train_step.minimize(loss)
 
@@ -185,7 +188,7 @@ def model_train(sess, x, y, predictions, X_train, Y_train, save=False,
 
 def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, dataset, save=False,
                 predictions_adv=None, rec_cost=None, init_all=True, evaluate=None,
-                verbose=True, feed=None, args=None, rng=None, exp_name="model_train", rec_loss_weight=1.0):
+                verbose=True, feed=None, args=None, rng=None, exp_name="model_train", rec_loss_weight=0.0):
     """
     Train a TF graph
     :param sess: TF session to use when training the graph
@@ -216,6 +219,14 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, datas
     """
     args = _ArgsWrapper(args or {})
 
+    if LooseVersion(tf.__version__) >= LooseVersion('1.0.0'):
+        correct_preds = tf.equal(tf.argmax(y, axis=-1),
+                                 tf.argmax(predictions, axis=-1))
+    else:
+        correct_preds = tf.equal(tf.argmax(y, axis=tf.rank(y) - 1),
+                                 tf.argmax(predictions,
+                                           axis=tf.rank(predictions) - 1))
+
     # Check that necessary arguments were given (see doc above)
     assert args.nb_epochs, "Number of epochs was not given in args dict"
     assert args.learning_rate, "Learning rate was not given in args dict"
@@ -240,18 +251,56 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, datas
     elif dataset == "svhn":
         num_features = 3*32*32
 
+    #USING LARGER WEIGHT DECAY
+    _WEIGHT_DECAY = 2e-4
+
     if rng is None:
         rng = np.random.RandomState()
 
     rec_cost_total = tf.sqrt(tf.reduce_mean(rec_cost))
 
     # Define loss
-    loss = model_loss(y, predictions) + rec_cost_total * rec_loss_weight
+    loss = model_loss(y, predictions) + \
+        rec_cost_total * rec_loss_weight + \
+        _WEIGHT_DECAY * tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
+
     if predictions_adv is not None:
         loss = (loss + model_loss(y, predictions_adv) + rec_cost_total * rec_loss_weight) / 3
 
-    train_step = tf.train.AdamOptimizer(learning_rate=args.learning_rate,name=exp_name)
-    train_step = train_step.minimize(loss)
+
+    initial_learning_rate = 0.1 * args.batch_size / 128
+    batches_per_epoch = X_train.shape[0] / args.batch_size
+    global_step = tf.train.get_or_create_global_step()
+    _MOMENTUM=0.9
+
+    # Multiply the learning rate by 0.1 at 100, 150, and 200 epochs.
+    boundaries = [int(batches_per_epoch * epoch) for epoch in [100, 150, 200]]
+    values = [initial_learning_rate * decay for decay in [1, 0.1, 0.01, 0.001]]
+    learning_rate = tf.train.piecewise_constant(
+        tf.cast(global_step, tf.int32), boundaries, values)
+
+    # Create a tensor named learning_rate for logging purposes
+    tf.identity(learning_rate, name='learning_rate')
+    tf.summary.scalar('learning_rate', learning_rate)
+
+    optimizer = tf.train.MomentumOptimizer(
+        learning_rate=learning_rate,
+        momentum=_MOMENTUM)
+
+    #optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+
+    # Batch norm requires update ops to be added as a dependency to the train_op
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    with tf.control_dependencies(update_ops):
+        train_step = optimizer.minimize(loss, global_step)
+
+    #train_step = tf.train.AdamOptimizer(learning_rate=args.learning_rate,name=exp_name)
+    #update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    #print("update ops", update_ops)
+    #with tf.control_dependencies(update_ops):
+    #    train_step = train_step.minimize(loss)
+
+
 
     with sess.as_default():
         if hasattr(tf, "global_variables_initializer"):
@@ -268,6 +317,7 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, datas
             # Compute number of batches
             nb_batches = int(math.ceil(float(len(X_train)) / args.batch_size))
             assert nb_batches * args.batch_size >= len(X_train)
+            acc_lst = []
 
             # Indices to shuffle training set
             index_shuf = list(range(len(X_train)))
@@ -286,14 +336,20 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, datas
                              corrupt_prob: [1]}
                 if feed is not None:
                     feed_dict.update(feed)
-                train_step.run(feed_dict=feed_dict)
+                _,curr_correct_pred,global_step_curr,learning_rate_curr = sess.run([train_step, correct_preds,global_step,learning_rate], feed_dict=feed_dict)
+                #acc_lst.append(1.0)
+                acc_lst.append(curr_correct_pred.mean())
             assert end >= len(X_train)  # Check that all examples were used
             cur = time.time()
             if verbose:
+                print("Global Step", global_step_curr, "Learning Rate", learning_rate_curr)
+                print("Train Acc", sum(acc_lst)/len(acc_lst))
                 _logger.info("Epoch " + str(epoch) + " took " +
                              str(cur - prev) + " seconds")
             if evaluate is not None:
+                t0 = time.time()
                 evaluate()
+                print("Time to evaluate", time.time()-t0)
 
         if save:
             save_path = os.path.join(args.train_dir, args.filename)
@@ -386,7 +442,7 @@ def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
     return accuracy
 
 def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None, rec_cost=None,
-               feed=None, args=None,x_shape_in=[-1,32*32*3]):
+               feed=None, args=None,x_shape_in=[-1,32*32*3],correct_preds=None):
     """
     Compute the accuracy of a TF model on some data
     :param sess: TF session to use when training the graph
@@ -409,19 +465,14 @@ def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None
         raise ValueError("X_test argument and Y_test argument "
                          "must be supplied.")
 
-    # Define accuracy symbolically
-    if LooseVersion(tf.__version__) >= LooseVersion('1.0.0'):
-        correct_preds = tf.equal(tf.argmax(y, axis=-1),
-                                 tf.argmax(predictions, axis=-1))
-    else:
-        correct_preds = tf.equal(tf.argmax(y, axis=tf.rank(y) - 1),
-                                 tf.argmax(predictions,
-                                           axis=tf.rank(predictions) - 1))
-
+    #args.batch_size_test = 1000
+    args.batch_size_test = args.batch_size
     # Init result var
     accuracy = 0.0
     if rec_cost is None:
         rec_error = None
+        r_true = []
+        r_false = []
     else:
         rec_error = 0.0
         r_true = []
@@ -429,12 +480,16 @@ def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None
 
     with sess.as_default():
         # Compute number of batches
-        nb_batches = int(math.ceil(float(len(X_test)) / args.batch_size))
-        assert nb_batches * args.batch_size >= len(X_test)
 
-        X_cur = np.zeros((args.batch_size,) + X_test.shape[1:],
+
+        nb_batches = int(math.ceil(float(len(X_test)) / args.batch_size_test))
+        assert nb_batches * args.batch_size_test >= len(X_test)
+
+        print("Number batches eval", nb_batches)
+
+        X_cur = np.zeros((args.batch_size_test,) + X_test.shape[1:],
                          dtype=X_test.dtype)
-        Y_cur = np.zeros((args.batch_size,) + Y_test.shape[1:],
+        Y_cur = np.zeros((args.batch_size_test,) + Y_test.shape[1:],
                          dtype=Y_test.dtype)
         for batch in range(nb_batches):
             if batch % 100 == 0 and batch > 0:
@@ -443,27 +498,31 @@ def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None
             # Must not use the `batch_indices` function here, because it
             # repeats some examples.
             # It's acceptable to repeat during training, but not eval.
-            start = batch * args.batch_size
-            end = min(len(X_test), start + args.batch_size)
+            start = batch * args.batch_size_test
+            end = min(len(X_test), start + args.batch_size_test)
 
             # The last batch may be smaller than all others. This should not
             # affect the accuarcy disproportionately.
-            cur_batch_size = end - start
+            cur_batch_size_test = end - start
             X_cur = X_cur.reshape(x_shape_in)
-            X_cur[:cur_batch_size] = X_test[start:end].reshape(x_shape_in)
+            X_cur[:cur_batch_size_test] = X_test[start:end].reshape(x_shape_in)
             #X_cur[:cur_batch_size] = X_test[start:end]
-            Y_cur[:cur_batch_size] = Y_test[start:end]
+            Y_cur[:cur_batch_size_test] = Y_test[start:end]
             #X_cur = X_cur.reshape([args.batch_size, 784])
             feed_dict = {x: X_cur, y: Y_cur, corrupt_prob: [0]}
             if feed is not None:
                 feed_dict.update(feed)
-            cur_corr_preds = correct_preds.eval(feed_dict=feed_dict)
+
+            if rec_cost is None:
+                cur_corr_preds = correct_preds.eval(feed_dict=feed_dict)
 
             if rec_cost is not None:
-                rec_cost_total = tf.sqrt(tf.reduce_mean(rec_cost))
+                rec_cost_total = rec_cost#tf.sqrt(tf.reduce_mean(rec_cost))
+                #cur_corr_preds, rec_cost_eval, rec_cost_total_eval = sess.run([correct_preds,rec_cost,rec_cost_total],feed_dict=feed_dict)
                 rec_cost_eval = rec_cost.eval(feed_dict=feed_dict)
                 rec_cost_total_eval = rec_cost_total.eval(feed_dict=feed_dict)
-                rec_error += rec_cost_total_eval
+                cur_corr_preds = correct_preds.eval(feed_dict=feed_dict)
+                rec_error += np.sqrt(rec_cost_total_eval.mean())
 
                 for j in range(0,128):
                     if cur_corr_preds[j] == True:
@@ -471,9 +530,9 @@ def model_eval_2(sess, x, y, corrupt_prob, predictions, X_test=None, Y_test=None
                     else:
                         r_false.append(rec_cost_eval[j])
 
+            #sess.graph.finalize()
 
-
-            accuracy += cur_corr_preds[:cur_batch_size].sum()
+            accuracy += cur_corr_preds[:cur_batch_size_test].sum()
 
         assert end >= len(X_test)
 

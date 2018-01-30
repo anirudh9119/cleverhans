@@ -38,15 +38,22 @@ import tensorflow as tf
 _BATCH_NORM_DECAY = 0.997
 _BATCH_NORM_EPSILON = 1e-5
 
-
 def batch_norm_relu(inputs, is_training, data_format, block_id):
   """Performs a batch normalization followed by a ReLU."""
   # We set fused=True for a significant performance boost. See
   # https://www.tensorflow.org/performance/performance_guide#common_fused_ops
+  
+  if not is_training:
+      reuse=True
+  else:
+      reuse=tf.AUTO_REUSE
+
+  name=block_id+"conv_bn_relu"
+
   inputs = tf.layers.batch_normalization(
-      inputs=inputs, axis=1 if data_format == 'channels_first' else 3,
-      momentum=_BATCH_NORM_DECAY, epsilon=_BATCH_NORM_EPSILON, center=True,
-      scale=True, training=is_training, fused=True,name=block_id,reuse=tf.AUTO_REUSE)
+          inputs=inputs, axis=1 if data_format == 'channels_first' else 3,
+          momentum=_BATCH_NORM_DECAY, epsilon=_BATCH_NORM_EPSILON, center=False,
+          scale=False, training=is_training, fused=True,name=name,reuse=reuse)
   inputs = tf.nn.relu(inputs)
   return inputs
 
@@ -89,7 +96,7 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format,bloc
       inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
       padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
       kernel_initializer=tf.variance_scaling_initializer(),
-      data_format=data_format,name=block_id,reuse=tf.AUTO_REUSE)
+      data_format=data_format,name=block_id+"conv2d_fixedpad",reuse=tf.AUTO_REUSE)
 
 
 def building_block(inputs, filters, is_training, projection_shortcut, strides,
@@ -121,12 +128,12 @@ def building_block(inputs, filters, is_training, projection_shortcut, strides,
 
   inputs = conv2d_fixed_padding(
       inputs=inputs, filters=filters, kernel_size=3, strides=strides,
-      data_format=data_format,block_id=block_id)
+      data_format=data_format,block_id=block_id+"conv2d")
 
-  inputs = batch_norm_relu(inputs, is_training, data_format,block_id)
+  inputs = batch_norm_relu(inputs, is_training, data_format,block_id+"bnrelu")
   inputs = conv2d_fixed_padding(
       inputs=inputs, filters=filters, kernel_size=3, strides=1,
-      data_format=data_format,block_id=block_id)
+      data_format=data_format,block_id=block_id+"conv2d_after")
 
   return inputs + shortcut
 
@@ -203,16 +210,16 @@ def block_layer(inputs, filters, block_fn, blocks, strides, is_training, name,
   def projection_shortcut(inputs):
     return conv2d_fixed_padding(
         inputs=inputs, filters=filters_out, kernel_size=1, strides=strides,
-        data_format=data_format,block_id='-2_proj')
+        data_format=data_format,block_id=name+'-2_proj')
 
   # Only the first block per block_layer uses projection_shortcut and strides
   inputs = block_fn(inputs, filters, is_training, projection_shortcut, strides,
-                    data_format,"-1_first")
+                    data_format,name+"-1_first")
 
   for i in range(1, blocks):
-    inputs = block_fn(inputs, filters, is_training, None, 1, data_format, str(i))
+    inputs = block_fn(inputs, filters, is_training, None, 1, data_format, name+"res_layer_"+str(i))
 
-  return tf.identity(inputs, name)
+  return tf.identity(inputs, name+"_identity")
 
 
 def cifar10_resnet_v2_generator(resnet_size, num_classes, data_format=None):
