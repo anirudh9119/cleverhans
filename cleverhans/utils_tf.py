@@ -186,9 +186,9 @@ def model_train(sess, x, y, predictions, X_train, Y_train, save=False,
     return True
 
 
-def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, dataset, save=False,
+def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, dataset, rec_loss_weight, save=False,
                 predictions_adv=None, rec_cost=None, init_all=True, evaluate=None,
-                verbose=True, feed=None, args=None, rng=None, exp_name="model_train", rec_loss_weight=0.0):
+                verbose=True, feed=None, args=None, rng=None, exp_name="model_train"):
     """
     Train a TF graph
     :param sess: TF session to use when training the graph
@@ -252,7 +252,8 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, datas
         num_features = 3*32*32
 
     #USING LARGER WEIGHT DECAY
-    _WEIGHT_DECAY = 2e-4
+    #_WEIGHT_DECAY = 2e-4
+    _WEIGHT_DECAY = 0.0
 
     if rng is None:
         rng = np.random.RandomState()
@@ -268,26 +269,33 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, datas
         loss = (loss + model_loss(y, predictions_adv) + rec_cost_total * rec_loss_weight) / 3
 
 
-    initial_learning_rate = 0.1 * args.batch_size / 128
-    batches_per_epoch = X_train.shape[0] / args.batch_size
-    global_step = tf.train.get_or_create_global_step()
-    _MOMENTUM=0.9
+    opt_type = "adam"
+    #opt_type = "momentum"
 
-    # Multiply the learning rate by 0.1 at 100, 150, and 200 epochs.
-    boundaries = [int(batches_per_epoch * epoch) for epoch in [100, 150, 200]]
-    values = [initial_learning_rate * decay for decay in [1, 0.1, 0.01, 0.001]]
-    learning_rate = tf.train.piecewise_constant(
-        tf.cast(global_step, tf.int32), boundaries, values)
+    if opt_type == "momentum":
+        initial_learning_rate = 0.1 * args.batch_size / 128
+        batches_per_epoch = X_train.shape[0] / args.batch_size
+        global_step = tf.train.get_or_create_global_step()
+        _MOMENTUM=0.9
 
-    # Create a tensor named learning_rate for logging purposes
-    tf.identity(learning_rate, name='learning_rate')
-    tf.summary.scalar('learning_rate', learning_rate)
+        # Multiply the learning rate by 0.1 at 100, 150, and 200 epochs.
+        boundaries = [int(batches_per_epoch * epoch) for epoch in [100, 150, 200]]
+        values = [initial_learning_rate * decay for decay in [1, 0.1, 0.01, 0.001]]
+        learning_rate = tf.train.piecewise_constant(
+            tf.cast(global_step, tf.int32), boundaries, values)
 
-    optimizer = tf.train.MomentumOptimizer(
-        learning_rate=learning_rate,
-        momentum=_MOMENTUM)
+        # Create a tensor named learning_rate for logging purposes
+        tf.identity(learning_rate, name='learning_rate')
+        tf.summary.scalar('learning_rate', learning_rate)
 
-    #optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        optimizer = tf.train.MomentumOptimizer(
+            learning_rate=learning_rate,
+            momentum=_MOMENTUM)
+
+    elif opt_type == "adam":
+        learning_rate = tf.Variable(args.learning_rate)
+        global_step = tf.train.get_or_create_global_step()
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
     # Batch norm requires update ops to be added as a dependency to the train_op
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)

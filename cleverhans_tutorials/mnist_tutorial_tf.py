@@ -43,8 +43,13 @@ FLAGS = flags.FLAGS
 #from autoencoder_pspace import autoencoder, get_output
 #from autoencoder_condrec import autoencoder, get_output, make_basic_fc
 #from autoencoder_modelmatch import autoencoder, get_output, make_basic, compute_rec_error
-#from cleverhans_tutorials.conv_autoencoder_mm import autoencoder, get_output, make_basic, compute_rec_error
-from cleverhans_tutorials.conv_baseline import autoencoder, get_output, make_basic, compute_rec_error
+from cleverhans_tutorials.conv_autoencoder_mm import autoencoder, get_output, make_basic, compute_rec_error
+#from cleverhans_tutorials.conv_baseline import autoencoder, get_output, make_basic, compute_rec_error
+#from cleverhans_tutorials.resnet_aa import autoencoder, get_output, make_basic, compute_rec_error
+
+rec_loss_weight = 1.0
+
+print("weighting on reconstruction loss", rec_loss_weight)
 
 def create_adv_by_name(model, x, attack_type, sess, dataset, y=None, **kwargs):
     attack_names = {'FGSM': FastGradientMethod,
@@ -55,10 +60,9 @@ def create_adv_by_name(model, x, attack_type, sess, dataset, y=None, **kwargs):
         raise Exception('Attack %s not defined.' % attack_type)
 
     attack_params_shared = {
-        #'mnist': {'eps': .3, 'eps_iter': 1.2, 'clip_min': 0., 'clip_max': 1.,'nb_iter':40},
-        'mnist': {'eps': 1.0, 'eps_iter': 1.2, 'clip_min': 0., 'clip_max': 1.,
-                  'nb_iter': 40},
-        'cifar10': {'eps': 10*8./255, 'eps_iter': 0.01, 'clip_min': 0.,
+        #'mnist': {'eps': .3, 'clip_min': 0., 'clip_max': 1.},
+        'mnist': {'eps': 1.0, 'eps_iter': 0.01, 'clip_min': 0., 'clip_max': 1.,'nb_iter': 40},
+        'cifar10': {'eps': 8./255, 'eps_iter': 0.01, 'clip_min': 0.,
                     'clip_max': 1., 'nb_iter': 20},
         'svhn': {'eps': 1.0, 'eps_iter': 1.2, 'clip_min': 0., 'clip_max': 1.,
                     'nb_iter': 40},
@@ -71,6 +75,9 @@ def create_adv_by_name(model, x, attack_type, sess, dataset, y=None, **kwargs):
         # Extract feedable and structural keyword arguments from kwargs
         fd_kwargs = attack.feedable_kwargs.keys() + attack.structural_kwargs
         params = attack_params_shared[dataset].copy()
+
+        print("Using attack params", params, "attack name", attack_type)
+
         params.update({k: v for k, v in kwargs.items() if v is not None})
         params = {k: v for k, v in params.items() if k in fd_kwargs}
 
@@ -179,8 +186,9 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     x_train = tf.reshape(x, shape_in_c)
     x_test = tf.reshape(x, shape_in_c)
 
-    x_train = tf.map_fn(lambda frame: preprocess_image(frame, True), x_train)
-    x_test = tf.map_fn(lambda frame: preprocess_image(frame, False), x_test)
+    if dataset == "cifar10":
+        x_train = tf.map_fn(lambda frame: preprocess_image(frame, True), x_train)
+        x_test = tf.map_fn(lambda frame: preprocess_image(frame, False), x_test)
 
     #model_path = "models/mnist"
     # Train an MNIST model
@@ -195,7 +203,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         x_train = tf.reshape(x_train, [-1, num_features])
         x_test = tf.reshape(x_test, [-1, num_features])
 
-        encoder, encoder_b, decoder_b, autoencoder_params, corrupt_prob = autoencoder(dataset,dimensions=[512, 128])
+        encoder, encoder_b, decoder_b, autoencoder_params, corrupt_prob = autoencoder(dataset,dimensions=[512, 512])
         model = make_basic(encoder, encoder_b, decoder_b, autoencoder_params,input_shape=(None,num_features))
         preds_train,hpreclean,hpostclean = get_output(model, x_train, encoder, encoder_b, decoder_b, autoencoder_params,scope=attack_name,is_training=True)
         preds_test,hpreclean_test,hpostclean_test = get_output(model, x_test, encoder, encoder_b, decoder_b, autoencoder_params,scope=attack_name,is_training=True)
@@ -221,7 +229,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
 
         model_train_2(sess, x, y, corrupt_prob, preds_train, X_train, Y_train, dataset, evaluate=evaluate,rec_cost=cost_train,
-                    args=train_params, rng=rng)
+                    args=train_params, rng=rng, rec_loss_weight=rec_loss_weight)
 
 
         # Calculate training error
@@ -239,12 +247,12 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
         preds_adv,hpreadv,hpostadv = get_output(model, adv_x, encoder, encoder_b, decoder_b, autoencoder_params,scope=attack_name,is_training=True)
 
-        cost = compute_rec_error(hpreadv,hpostadv)
+        cost_adv = compute_rec_error(hpreadv,hpostadv)
 
 
         # Evaluate the accuracy of the MNIST model on adversarial examples
         eval_par = {'batch_size': batch_size}
-        acc,rec_error,re_true,re_false = model_eval_2(sess, x, y, corrupt_prob, preds_adv, X_test, Y_test, rec_cost=cost_test, args=eval_par, x_shape_in=shape_in, correct_preds=comp_corr_preds(preds_adv,y))
+        acc,rec_error,re_true,re_false = model_eval_2(sess, x, y, corrupt_prob, preds_adv, X_test, Y_test, rec_cost=cost_adv, args=eval_par, x_shape_in=shape_in, correct_preds=comp_corr_preds(preds_adv,y))
 
         print('Test accuracy on adversarial examples: %0.4f\n' % acc)
         print('rec error adv->adv on adversarial examples: %0.4f\n' % rec_error)
@@ -269,8 +277,9 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     x_train = tf.reshape(x, shape_in_c)
     x_test = tf.reshape(x, shape_in_c)
 
-    x_train = tf.map_fn(lambda frame: preprocess_image(frame, True), x_train)
-    x_test = tf.map_fn(lambda frame: preprocess_image(frame, False), x_test)
+    if dataset == "cifar10":
+        x_train = tf.map_fn(lambda frame: preprocess_image(frame, True), x_train)
+        x_test = tf.map_fn(lambda frame: preprocess_image(frame, False), x_test)
 
     # Redefine TF model graph
     #x = tf.placeholder(tf.float32, shape=(None, 28, 28, 1))
@@ -278,18 +287,19 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     x_test = tf.reshape(x_test, [-1, num_features])
     #model_2 = make_basic_cnn(nb_filters=nb_filters)
 
-    encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, corrupt_prob_2 = autoencoder(dataset, dimensions=[512, 320])
+    encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, corrupt_prob_2 = autoencoder(dataset, dimensions=[512, 512])
     model_2 = make_basic(encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,input_shape=(None,num_features))
 
     cost_2 = 0
     corrupt_prob_2 = tf.placeholder(tf.float32, [1])
+
     adv_x_2_train = create_adv_by_name(model_2, x_train, attack_name, sess, 'mnist')
     adv_x_2_train = tf.reshape(adv_x_2_train, [-1, num_features])
 
     adv_x_2_test = create_adv_by_name(model_2, x_test, attack_name, sess, 'mnist')
     adv_x_2_test = tf.reshape(adv_x_2_test, [-1, num_features])
 
-    encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, corrupt_prob_2 = autoencoder(dataset, dimensions=[512, 320])
+    encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, corrupt_prob_2 = autoencoder(dataset, dimensions=[512, 512])
     preds_2_train,hpreclean_train,hpostclean_train = get_output(model_2, x_train, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,scope=attack_name)
     preds_2_test,hpreclean_test,hpostclean_test = get_output(model_2, x_test, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,scope=attack_name)
 
@@ -331,7 +341,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     # Perform and evaluate adversarial training
     model_train_2(sess, x, y, corrupt_prob_2, preds_2_train, X_train, Y_train, dataset,
                 rec_cost=cost_2_train+cost_2_adv_train, predictions_adv=preds_2_adv_train, evaluate=evaluate_2,
-                args=train_params, rng=rng,exp_name="model_train_against_adv")
+                args=train_params, rng=rng,exp_name="model_train_against_adv",rec_loss_weight=rec_loss_weight)
 
     # Calculate training errors
     if testing:
@@ -349,24 +359,23 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 def main(argv=None):
     mnist_tutorial(nb_epochs=FLAGS.nb_epochs, batch_size=FLAGS.batch_size,
                    learning_rate=FLAGS.learning_rate,
-                   #attack_name='MadryEtAl', #'FGSM'
-                   attack_name='FGSM',
+                   attack_name='MadryEtAl', #'FGSM'
+                   #attack_name='FGSM',
                    clean_train=FLAGS.clean_train,
                    backprop_through_attack=FLAGS.backprop_through_attack,
                    nb_filters=FLAGS.nb_filters,
                    dataset=FLAGS.dataset)
 
-
 if __name__ == '__main__':
     flags.DEFINE_integer('nb_filters', 64, 'Model size multiplier')
-    flags.DEFINE_integer('nb_epochs', 1, 'Number of epochs to train model')
+    flags.DEFINE_integer('nb_epochs', 20, 'Number of epochs to train model')
     flags.DEFINE_integer('batch_size', 128, 'Size of training batches')
     flags.DEFINE_float('learning_rate', 0.001, 'Learning rate for training')
-    flags.DEFINE_bool('clean_train', True, 'Train on clean examples')
+    flags.DEFINE_bool('clean_train', False, 'Train on clean examples')
     flags.DEFINE_bool('backprop_through_attack', False,
                       ('If True, backprop through adversarial example '
                        'construction process during adversarial training'))
-    flags.DEFINE_string('dataset', 'cifar10', "The dataset to train and evaluate on")
+    flags.DEFINE_string('dataset', 'mnist', "The dataset to train and evaluate on")
     tf.app.run()
 
 

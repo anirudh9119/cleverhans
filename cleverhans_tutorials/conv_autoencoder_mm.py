@@ -125,9 +125,9 @@ def h_autoencoder(inp,encoder,encoder_b,decoder_b,autoencoder_params):
 
 #mnist
 
-dataset_use = "cifar10"
+#dataset_use = "cifar10"
 #dataset_use = "svhn"
-#dataset_use = "mnist"
+dataset_use = "mnist"
 
 if dataset_use == "cifar10":
     lens = [32,16,8,4]
@@ -164,28 +164,19 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
         ximg = tf.transpose(ximg, [0, 3, 1, 2])
         data_format='channels_first'
 
-
         c1 = tf.nn.leaky_relu(tf.layers.conv2d(
-        inputs=ximg, filters=fils[1], kernel_size=(3,3), strides=(1,1),
+        inputs=ximg, filters=fils[1], kernel_size=(8,8), strides=(2,2),
         padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c1_conv',use_bias=True,data_format=data_format))
 
-        c1r = block_layer(c1, filters=fils[1], block_fn=building_block, blocks=8, is_training=is_training,strides=(2,2),data_format=data_format,name='c1_res')
-
         c2 = tf.nn.leaky_relu(tf.layers.conv2d(
-        inputs=c1r, filters=fils[2], kernel_size=(3,3), strides=(1,1),
+        inputs=c1, filters=fils[2], kernel_size=(5,5), strides=(2,2),
         padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c2_conv',use_bias=True,data_format=data_format))
 
-
-        c2r = block_layer(c2, filters=fils[2], block_fn=building_block, blocks=8, is_training=is_training,strides=(2,2),data_format=data_format,name='c2_res')
-
         c3 = tf.nn.leaky_relu(tf.layers.conv2d(
-        inputs=c2r, filters=fils[3], kernel_size=(3,3), strides=(1,1),
+        inputs=c2, filters=fils[3], kernel_size=(3,3), strides=(2,2),
         padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c3_conv',use_bias=True,data_format=data_format))
 
-
-        c3r = block_layer(c3, filters=fils[3], block_fn=building_block, blocks=8, is_training=is_training,strides=(2,2),data_format=data_format,name='c3_res')
-
-    cend = c3r
+    cend = c3
 
     #c2 = tf.nn.leaky_relu(model.layers['lc2'].fprop(c1))
     #c3 = tf.nn.leaky_relu(model.layers['lc3'].fprop(c2))
@@ -196,6 +187,11 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
 
     output_ = h_autoencoder(gaussian_noise(h_input_to_dae_),encoder,encoder_b,decoder_b,autoencoder_params)
     output_blockin = h_autoencoder(gaussian_noise(tf.stop_gradient(h_input_to_dae_)),encoder,encoder_b,decoder_b,autoencoder_params)
+
+    skip_aa_loop = False
+
+    if skip_aa_loop:
+        output_ = h_input_to_dae_ + output_*0.0
 
     #output_blockin = h_input_to_dae_*0.0
     #output_ = h_input_to_dae_

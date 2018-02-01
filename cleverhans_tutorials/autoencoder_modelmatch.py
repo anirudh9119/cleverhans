@@ -86,8 +86,10 @@ def autoencoder(dataset,dimensions=[512, 256, 64]):
     #cost = tf.sqrt(tf.reduce_mean(tf.square(y - x)))
     
 
+    autoencoder_params['d0W'] = tf.Variable(tf.random_uniform([512, 512],-1.0 / math.sqrt(512),1.0 / math.sqrt(512)))
+
     autoencoder_params['x_w1'] = tf.Variable(tf.random_uniform([num_features, 512],-1.0 / math.sqrt(512),1.0 / math.sqrt(512)))
-    autoencoder_params['x_w2'] = tf.Variable(tf.random_uniform([512, 784],-1.0 / math.sqrt(512),1.0 / math.sqrt(512)))
+    autoencoder_params['x_w3'] = tf.Variable(tf.random_uniform([512, 784],-1.0 / math.sqrt(512),1.0 / math.sqrt(512)))
 
     return encoder, encoder_b, decoder_b, autoencoder_params, corrupt_prob
             #{'x': x, 'z': z, 'y': y,
@@ -96,29 +98,32 @@ def autoencoder(dataset,dimensions=[512, 256, 64]):
 
 def h_autoencoder(inp,encoder,encoder_b,decoder_b,autoencoder_params):
 
-    output = tf.nn.tanh(tf.matmul(inp, encoder[0]) + encoder_b[0])
-    output_ = tf.nn.tanh(tf.matmul(output, tf.transpose(encoder[0])) + decoder_b[0])
+    output = tf.nn.leaky_relu(tf.matmul(inp, encoder[0]) + encoder_b[0])
+    output_ = tf.nn.leaky_relu(tf.matmul(output, tf.transpose(encoder[0])) + decoder_b[0])
+    #output_ = tf.nn.leaky_relu(tf.matmul(output, autoencoder_params['d0W'] + decoder_b[0]))
 
     return output_
 
 
-def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False,scope="",is_training=True):
+def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=True,scope="",is_training=True):
     #x= tf.reshape(x, [-1, 784])
 
     if autoenc_x:
-        xa = tf.nn.leaky_relu(tf.matmul(x, autoencoder_params['x_w1']))
-        xuse = tf.matmul(xa, autoencoder_params['x_w2'])
+        xa = tf.nn.leaky_relu(tf.matmul(gaussian_noise(x), autoencoder_params['x_w1']))
+        xuse = tf.nn.leaky_relu(tf.matmul(xa, tf.transpose(autoencoder_params['x_w1'])))
     else:
         xuse = x
 
-    h_input_to_dae_ = tf.nn.relu(model.layers['l1'].fprop(xuse))
+    h_input_to_dae_ = tf.nn.leaky_relu(model.layers['l1'].fprop(xuse))
     
     output_ = h_autoencoder(gaussian_noise(h_input_to_dae_),encoder,encoder_b,decoder_b,autoencoder_params)
     
     output_blockin = h_autoencoder(gaussian_noise(tf.stop_gradient(h_input_to_dae_)),encoder,encoder_b,decoder_b,autoencoder_params)
 
     if autoenc_x:
-        cost += tf.sqrt(tf.reduce_mean(tf.square(x - xrec)))
+        #cost += tf.sqrt(tf.reduce_mean(tf.square(x - xrec)))
+        h_input_to_dae_ = tf.concat([h_input_to_dae_, x],1)
+        output_blockin = tf.concat([output_blockin, xuse],1)
 
     #h2 = model.layers['a2'].fprop(model.layers['l2'].fprop(tf.concat([output_],axis=1)))
 
