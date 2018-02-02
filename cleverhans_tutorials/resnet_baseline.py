@@ -30,7 +30,6 @@ class empty_scope():
          pass
 
 
-print("Importing autoencoder classifier!")
 
 def corrupt(x):
     """Take an input tensor and add uniform masking.
@@ -125,13 +124,15 @@ def h_autoencoder(inp,encoder,encoder_b,decoder_b,autoencoder_params):
 
 #mnist
 
-#dataset_use = "cifar10"
+dataset_use = "cifar10"
 #dataset_use = "svhn"
-dataset_use = "mnist"
+#dataset_use = "mnist"
+
+wide=1
 
 if dataset_use == "cifar10":
     lens = [32,16,8,4]
-    fils = [3,16*4,32*4,64*4]
+    fils = [3,16*wide,32*wide,64*wide]
 elif dataset_use == "mnist":
     lens = [28,14,7,4]
     fils = [1,16,32,64]
@@ -141,13 +142,7 @@ elif dataset_use == "svhn":
 
 def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False,scope="",is_training=True):
 
-    if autoenc_x:
-        xa = tf.nn.leaky_relu(tf.matmul(x, autoencoder_params['x_w1']))
-        xuse = tf.matmul(xa, autoencoder_params['x_w2'])
-    else:
-        xuse = x
-
-    ximg = tf.reshape(xuse, [-1, lens[0],lens[0],fils[0]])
+    ximg = tf.reshape(x, [-1, lens[0],lens[0],fils[0]])
 
     #c1 = tf.nn.leaky_relu(model.layers['lc1'].fprop(ximg))
  
@@ -165,38 +160,36 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
         data_format='channels_first'
 
         c1 = tf.nn.leaky_relu(tf.layers.conv2d(
-        inputs=ximg, filters=fils[1], kernel_size=(8,8), strides=(2,2),
+        inputs=ximg, filters=fils[1], kernel_size=(3,3), strides=(1,1),
         padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c1_conv',use_bias=True,data_format=data_format))
 
-        c2 = tf.nn.leaky_relu(tf.layers.conv2d(
-        inputs=c1, filters=fils[2], kernel_size=(5,5), strides=(2,2),
-        padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c2_conv',use_bias=True,data_format=data_format))
+        c1r = block_layer(c1, filters=fils[1], block_fn=building_block, blocks=5, is_training=is_training,strides=(1,1),data_format=data_format,name='c1_res')
 
-        c3 = tf.nn.leaky_relu(tf.layers.conv2d(
-        inputs=c2, filters=fils[3], kernel_size=(3,3), strides=(2,2),
-        padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c3_conv',use_bias=True,data_format=data_format))
+        c2r = block_layer(c1r, filters=fils[2], block_fn=building_block, blocks=5, is_training=is_training,strides=(2,2),data_format=data_format,name='c2_res')
 
-    cend = c3
+        c3r = block_layer(c2r, filters=fils[3], block_fn=building_block, blocks=5, is_training=is_training,strides=(2,2),data_format=data_format,name='c3_res')
+
+    cend = c3r
+
+
+    cend = batch_norm_relu(cend, is_training=is_training, data_format=data_format,block_id="post_fc",center_and_scale=False)
+    cend = tf.layers.average_pooling2d(
+        inputs=cend, pool_size=8, strides=1, padding='VALID',
+        data_format=data_format)
 
     #c2 = tf.nn.leaky_relu(model.layers['lc2'].fprop(c1))
     #c3 = tf.nn.leaky_relu(model.layers['lc3'].fprop(c2))
 
-    cend = tf.reshape(cend, [-1,fils[3]*lens[3]*lens[3]])
+    cend = tf.reshape(cend, [-1,fils[3]])
 
     h_input_to_dae_ = tf.nn.leaky_relu(model.layers['l1'].fprop(cend))
 
-    output_ = h_autoencoder(gaussian_noise(h_input_to_dae_),encoder,encoder_b,decoder_b,autoencoder_params)
-    output_blockin = h_autoencoder(gaussian_noise(tf.stop_gradient(h_input_to_dae_)),encoder,encoder_b,decoder_b,autoencoder_params)
+    #output_ = h_autoencoder(gaussian_noise(h_input_to_dae_),encoder,encoder_b,decoder_b,autoencoder_params)
+    #output_blockin = h_autoencoder(gaussian_noise(tf.stop_gradient(h_input_to_dae_)),encoder,encoder_b,decoder_b,autoencoder_params)
 
-        
-    output_ = h_input_to_dae_ + output_*0.0
-    output_blockin = tf.stop_gradient(h_input_to_dae_)
-
-    #output_blockin = h_input_to_dae_*0.0
-    #output_ = h_input_to_dae_
-
-    if autoenc_x:
-        cost += tf.sqrt(tf.reduce_mean(tf.square(x - xrec)))
+    h_input_to_dae_ = cend
+    output_blockin = h_input_to_dae_*0.0
+    output_ = h_input_to_dae_
 
     #h2 = model.layers['a2'].fprop(model.layers['l2'].fprop(tf.concat([output_],axis=1)))
 
@@ -230,7 +223,7 @@ class MLP_Classifier_Condrec(Model):
         #self.layers['lc1'].set_input_shape((None,lens[0],lens[0],fils[0]))
         #self.layers['lc2'].set_input_shape((None,lens[1],lens[1],fils[1]))
         #self.layers['lc3'].set_input_shape((None,lens[2],lens[2],fils[2]))
-        self.layers['l1'].set_input_shape((None,lens[3]*lens[3]*fils[3]))
+        self.layers['l1'].set_input_shape((None,fils[3]))
         #self.layers['l2'].set_input_shape((None,512))
         self.layers['logits'].set_input_shape((None, 512))
 
@@ -246,7 +239,6 @@ class MLP_Classifier_Condrec(Model):
 
 def make_basic(encoder, encoder_b, decoder_b,autoencoder_params,nb_classes=10,
                   input_shape=(None, 784)):
-    print("Using classifier module defined in condrec module")
 
     model = MLP_Classifier_Condrec(input_shape, encoder, encoder_b, decoder_b,autoencoder_params)
 

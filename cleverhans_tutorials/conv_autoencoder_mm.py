@@ -188,11 +188,6 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
     output_ = h_autoencoder(gaussian_noise(h_input_to_dae_),encoder,encoder_b,decoder_b,autoencoder_params)
     output_blockin = h_autoencoder(gaussian_noise(tf.stop_gradient(h_input_to_dae_)),encoder,encoder_b,decoder_b,autoencoder_params)
 
-    skip_aa_loop = False
-
-    if skip_aa_loop:
-        output_ = h_input_to_dae_ + output_*0.0
-
     #output_blockin = h_input_to_dae_*0.0
     #output_ = h_input_to_dae_
 

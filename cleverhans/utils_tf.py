@@ -272,6 +272,8 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, datas
     opt_type = "adam"
     #opt_type = "momentum"
 
+    print("using optimizer", opt_type)
+
     if opt_type == "momentum":
         initial_learning_rate = 0.1 * args.batch_size / 128
         batches_per_epoch = X_train.shape[0] / args.batch_size

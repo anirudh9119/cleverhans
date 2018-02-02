@@ -33,18 +33,36 @@ from cleverhans.utils_tf import model_train_2, model_eval_2
 from cleverhans.attacks import FastGradientMethod, MadryEtAl
 from cleverhans.utils import AccuracyReport, set_log_level
 
-
 #import os
 #import math
 FLAGS = flags.FLAGS
+
+#model_type = "conv_autoencoder_mm"
+#model_type = "conv_baseline"
+#model_type = "resnet_baseline"
+model_type = "resnet_aa"
+#model_type = "fc_baseline"
+#model_type = "autoencoder_modelmatch"
+
+print("Using model type", model_type)
 
 #from autoencoder_tied_arch import autoencoder, get_output
 #from classifier_basic import autoencoder, get_output
 #from autoencoder_pspace import autoencoder, get_output
 #from autoencoder_condrec import autoencoder, get_output, make_basic_fc
 #from autoencoder_modelmatch import autoencoder, get_output, make_basic, compute_rec_error
-from cleverhans_tutorials.conv_autoencoder_mm import autoencoder, get_output, make_basic, compute_rec_error
-#from cleverhans_tutorials.conv_baseline import autoencoder, get_output, make_basic, compute_rec_error
+if model_type == "conv_autoencoder_mm":
+    from cleverhans_tutorials.conv_autoencoder_mm import autoencoder, get_output, make_basic, compute_rec_error
+elif model_type == "conv_baseline":
+    from cleverhans_tutorials.conv_baseline import autoencoder, get_output, make_basic, compute_rec_error
+elif model_type == "resnet_baseline":
+    from cleverhans_tutorials.resnet_baseline import autoencoder, get_output, make_basic, compute_rec_error
+elif model_type == "resnet_aa":
+    from cleverhans_tutorials.resnet_aa import autoencoder, get_output, make_basic, compute_rec_error
+elif model_type == "fc_baseline":
+    from cleverhans_tutorials.fc_baseline import autoencoder, get_output, make_basic, compute_rec_error
+elif model_type == "autoencoder_modelmatch":
+    from cleverhans_tutorials.autoencoder_modelmatch import autoencoder, get_output, make_basic, compute_rec_error
 #from cleverhans_tutorials.resnet_aa import autoencoder, get_output, make_basic, compute_rec_error
 
 rec_loss_weight = 1.0
@@ -61,7 +79,7 @@ def create_adv_by_name(model, x, attack_type, sess, dataset, y=None, **kwargs):
 
     attack_params_shared = {
         #'mnist': {'eps': .3, 'clip_min': 0., 'clip_max': 1.},
-        'mnist': {'eps': 1.0, 'eps_iter': 0.01, 'clip_min': 0., 'clip_max': 1.,'nb_iter': 40},
+        'mnist': {'eps': 1.0, 'eps_iter': 0.01, 'clip_min': 0., 'clip_max': 1.,'nb_iter': 200},
         'cifar10': {'eps': 8./255, 'eps_iter': 0.01, 'clip_min': 0.,
                     'clip_max': 1., 'nb_iter': 20},
         'svhn': {'eps': 1.0, 'eps_iter': 1.2, 'clip_min': 0., 'clip_max': 1.,
@@ -359,8 +377,8 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 def main(argv=None):
     mnist_tutorial(nb_epochs=FLAGS.nb_epochs, batch_size=FLAGS.batch_size,
                    learning_rate=FLAGS.learning_rate,
-                   attack_name='MadryEtAl', #'FGSM'
-                   #attack_name='FGSM',
+                   #attack_name='MadryEtAl', #'FGSM'
+                   attack_name='FGSM',
                    clean_train=FLAGS.clean_train,
                    backprop_through_attack=FLAGS.backprop_through_attack,
                    nb_filters=FLAGS.nb_filters,
@@ -368,14 +386,14 @@ def main(argv=None):
 
 if __name__ == '__main__':
     flags.DEFINE_integer('nb_filters', 64, 'Model size multiplier')
-    flags.DEFINE_integer('nb_epochs', 20, 'Number of epochs to train model')
+    flags.DEFINE_integer('nb_epochs', 250, 'Number of epochs to train model')
     flags.DEFINE_integer('batch_size', 128, 'Size of training batches')
     flags.DEFINE_float('learning_rate', 0.001, 'Learning rate for training')
     flags.DEFINE_bool('clean_train', False, 'Train on clean examples')
     flags.DEFINE_bool('backprop_through_attack', False,
                       ('If True, backprop through adversarial example '
                        'construction process during adversarial training'))
-    flags.DEFINE_string('dataset', 'mnist', "The dataset to train and evaluate on")
+    flags.DEFINE_string('dataset', 'cifar10', "The dataset to train and evaluate on")
     tf.app.run()
 
 
