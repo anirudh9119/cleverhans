@@ -17,14 +17,50 @@ import logging
 
 from cleverhans.utils_mnist import data_mnist
 from cleverhans.utils_tf import model_train, model_eval
-from cleverhans.attacks import FastGradientMethod
-from cleverhans_tutorials.tutorial_models import make_basic_cnn
+from cleverhans.attacks import FastGradientMethod, MadryEtAl
+from cleverhans_tutorials.tutorial_models import make_basic_cnn, make_basic_fc
 from cleverhans.utils import AccuracyReport, set_log_level
 
 import os
 
 FLAGS = flags.FLAGS
 
+def create_adv_by_name(model, x, attack_type, sess, dataset, y=None, **kwargs):
+    attack_names = {'FGSM': FastGradientMethod,
+                    'MadryEtAl': MadryEtAl,
+                    }
+
+    if attack_type not in attack_names:
+        raise Exception('Attack %s not defined.' % attack_type)
+
+    attack_params_shared = {
+        #'mnist': {'eps': .3, 'clip_min': 0., 'clip_max': 1.},
+        'mnist': {'eps': 10.0, 'eps_iter': 1.0, 'clip_min': 0., 'clip_max': 1.,'nb_iter': 40},
+        'cifar10': {'eps': 8./255, 'eps_iter': 0.01, 'clip_min': 0.,
+                    'clip_max': 1., 'nb_iter': 20},
+        'svhn': {'eps': 1.0, 'eps_iter': 1.2, 'clip_min': 0., 'clip_max': 1.,
+                    'nb_iter': 40},
+    }
+
+    with tf.variable_scope(attack_type):
+        attack_class = attack_names[attack_type]
+        attack = attack_class(model, sess=sess)
+
+        # Extract feedable and structural keyword arguments from kwargs
+        fd_kwargs = attack.feedable_kwargs.keys() + attack.structural_kwargs
+        params = attack_params_shared[dataset].copy()
+
+        print("Using attack params", params, "attack name", attack_type)
+
+        params.update({k: v for k, v in kwargs.items() if v is not None})
+        params = {k: v for k, v in params.items() if k in fd_kwargs}
+
+        if '_y' in attack_type:
+            params['y'] = y
+        logging.info(params)
+        adv_x = attack.generate(x, **params)
+
+    return adv_x
 
 def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
                    test_end=10000, nb_epochs=6, batch_size=128,
@@ -91,9 +127,10 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         'batch_size': batch_size,
         'learning_rate': learning_rate
     }
-    fgsm_params = {'eps': 0.1,
-                   'clip_min': 0.,
-                   'clip_max': 1.}
+
+    #fgsm_params = {'eps': 0.1,
+    #               'clip_min': 0.,
+    #               'clip_max': 1.}
     rng = np.random.RandomState([2017, 8, 30])
 
     if clean_train:
@@ -121,8 +158,11 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
         # Initialize the Fast Gradient Sign Method (FGSM) attack object and
         # graph
-        fgsm = FastGradientMethod(model, sess=sess)
-        adv_x = fgsm.generate(x, **fgsm_params)
+        #fgsm = FastGradientMethod(model, sess=sess)
+        #adv_x = fgsm.generate(x, **fgsm_params)
+
+        adv_x = create_adv_by_name(model, x, attack_type="MadryEtAl", sess=sess, dataset='mnist')
+
         preds_adv = model.get_probs(adv_x)
 
         # Evaluate the accuracy of the MNIST model on adversarial examples
@@ -141,9 +181,12 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         print("Repeating the process, using adversarial training")
     # Redefine TF model graph
     model_2 = make_basic_cnn(nb_filters=nb_filters)
+    #model_2 = make_basic_fc()
+    x = tf.reshape(x, [-1,28,28,1])
     preds_2 = model_2(x)
-    fgsm2 = FastGradientMethod(model_2, sess=sess)
-    adv_x_2 = fgsm2.generate(x, **fgsm_params)
+    #fgsm2 = FastGradientMethod(model_2, sess=sess)
+    #adv_x_2 = fgsm2.generate(x, **fgsm_params)
+    adv_x_2 = create_adv_by_name(model_2, x, attack_type="MadryEtAl", sess=sess, dataset='mnist')
     if not backprop_through_attack:
         # For the fgsm attack used in this tutorial, the attack has zero
         # gradient so enabling this flag does not change the gradient.
@@ -195,11 +238,11 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    flags.DEFINE_integer('nb_filters', 64, 'Model size multiplier')
+    flags.DEFINE_integer('nb_filters', 16, 'Model size multiplier')
     flags.DEFINE_integer('nb_epochs', 20, 'Number of epochs to train model')
     flags.DEFINE_integer('batch_size', 128, 'Size of training batches')
     flags.DEFINE_float('learning_rate', 0.001, 'Learning rate for training')
-    flags.DEFINE_bool('clean_train', True, 'Train on clean examples')
+    flags.DEFINE_bool('clean_train', False, 'Train on clean examples')
     flags.DEFINE_bool('backprop_through_attack', False,
                       ('If True, backprop through adversarial example '
                        'construction process during adversarial training'))

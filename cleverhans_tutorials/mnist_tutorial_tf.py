@@ -40,9 +40,10 @@ FLAGS = flags.FLAGS
 #model_type = "conv_autoencoder_mm"
 #model_type = "conv_baseline"
 #model_type = "resnet_baseline"
-model_type = "resnet_aa"
-#model_type = "fc_baseline"
+#model_type = "resnet_aa#"
+model_type = "fc_baseline"
 #model_type = "autoencoder_modelmatch"
+#model_type = "simple"
 
 print("Using model type", model_type)
 
@@ -63,6 +64,8 @@ elif model_type == "fc_baseline":
     from cleverhans_tutorials.fc_baseline import autoencoder, get_output, make_basic, compute_rec_error
 elif model_type == "autoencoder_modelmatch":
     from cleverhans_tutorials.autoencoder_modelmatch import autoencoder, get_output, make_basic, compute_rec_error
+elif model_type == "simple":
+    from cleverhans_tutorials.simplified_baseline import autoencoder, get_output, make_basic, compute_rec_error
 #from cleverhans_tutorials.resnet_aa import autoencoder, get_output, make_basic, compute_rec_error
 
 rec_loss_weight = 1.0
@@ -79,7 +82,7 @@ def create_adv_by_name(model, x, attack_type, sess, dataset, y=None, **kwargs):
 
     attack_params_shared = {
         #'mnist': {'eps': .3, 'clip_min': 0., 'clip_max': 1.},
-        'mnist': {'eps': 1.0, 'eps_iter': 0.01, 'clip_min': 0., 'clip_max': 1.,'nb_iter': 200},
+        'mnist': {'eps': 10.0, 'eps_iter': 1.0, 'clip_min': 0., 'clip_max': 1.,'nb_iter': 40},
         'cifar10': {'eps': 8./255, 'eps_iter': 0.01, 'clip_min': 0.,
                     'clip_max': 1., 'nb_iter': 20},
         'svhn': {'eps': 1.0, 'eps_iter': 1.2, 'clip_min': 0., 'clip_max': 1.,
@@ -307,58 +310,86 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 
     encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, corrupt_prob_2 = autoencoder(dataset, dimensions=[512, 512])
     model_2 = make_basic(encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,input_shape=(None,num_features))
+    
+    #from cleverhans_tutorials.tutorial_models import make_basic_fc, make_basic_cnn
+    #model_2 = make_basic_cnn(64)
+    #corrupt_prob_2 = tf.placeholder(tf.float32, [1])
 
-    cost_2 = 0
-    corrupt_prob_2 = tf.placeholder(tf.float32, [1])
+    def create_outputs_base(x_in,mode):
 
-    adv_x_2_train = create_adv_by_name(model_2, x_train, attack_name, sess, 'mnist')
-    adv_x_2_train = tf.reshape(adv_x_2_train, [-1, num_features])
+        x_in = tf.reshape(x_in, [-1,28,28,1])
 
-    adv_x_2_test = create_adv_by_name(model_2, x_test, attack_name, sess, 'mnist')
-    adv_x_2_test = tf.reshape(adv_x_2_test, [-1, num_features])
+        preds_clean = model_2(x_in)
 
-    encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, corrupt_prob_2 = autoencoder(dataset, dimensions=[512, 512])
-    preds_2_train,hpreclean_train,hpostclean_train = get_output(model_2, x_train, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,scope=attack_name)
-    preds_2_test,hpreclean_test,hpostclean_test = get_output(model_2, x_test, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,scope=attack_name)
 
-    cost_2_train = compute_rec_error(hpreclean_train,hpostclean_train)
-    cost_2_test = compute_rec_error(hpreclean_test,hpostclean_test)
+        import ipdb
+        ipdb.set_trace()
+        adv_x_2 = create_adv_by_name(model_2, x_in, attack_name, sess, 'mnist')
+        #adv_x_2 = tf.reshape(adv_x_2, [-1, num_features])
 
-    if not backprop_through_attack:
-        adv_x_2_train = tf.stop_gradient(adv_x_2_train)
-        adv_x_2_test = tf.stop_gradient(adv_x_2_test)
+        #preds_clean,hpreclean,hpostclean = get_output(model_2, x_in, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,scope=attack_name)
 
-    preds_2_adv_train,hpreadv_train,hpostadv_train = get_output(model_2, adv_x_2_train, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,scope=attack_name)
-    cost_2_adv_train = compute_rec_error(hpreclean_train,hpostadv_train)
-    corr_preds_2_train = comp_corr_preds(preds_2_train,y)
-    corr_preds_2_adv_train = comp_corr_preds(preds_2_adv_train,y)
+        if not backprop_through_attack:
+            adv_x_2 = tf.stop_gradient(adv_x_2)
 
-    preds_2_adv_test,hpreadv_test,hpostadv_test = get_output(model_2, adv_x_2_test, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,scope=attack_name)
-    cost_2_adv_test = compute_rec_error(hpreclean_test,hpostadv_test)
-    corr_preds_2_test = comp_corr_preds(preds_2_test,y)
-    corr_preds_2_adv_test = comp_corr_preds(preds_2_adv_test,y)
+        preds_adv = model_2(adv_x_2)
+        #preds_adv,hpreadv,hpostadv = get_output(model_2, adv_x_2, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params,scope=attack_name)
+
+        corr_preds_clean = comp_corr_preds(preds_clean,y)
+        corr_preds_adv = comp_corr_preds(preds_adv,y)
+
+        return tf.zeros((128,)), tf.zeros((128,)), preds_clean, preds_adv, corr_preds_clean, corr_preds_adv
+
+    def create_outputs(x_in, mode):
+
+        if mode == "train":
+            reuse = False
+        else:
+            reuse = True
+
+        x_in = tf.reshape(x_in, [-1,28,28,1])
+
+        preds_clean,hpreclean,hpostclean = get_output(model_2, x_in, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, reuse=reuse, scope=attack_name)
+
+        rec_clean = compute_rec_error(hpreclean,hpostclean)
+
+        adv_x_2 = create_adv_by_name(model_2, x_in, attack_name, sess, 'mnist')
+
+        if not backprop_through_attack:
+            adv_x_2 = tf.stop_gradient(adv_x_2)
+
+        preds_adv,hpreadv,hpostadv = get_output(model_2, adv_x_2, encoder_2, encoder_b_2, decoder_b_2, autoencoder_params, reuse=True, scope=attack_name)
+
+        rec_adv = compute_rec_error(hpreclean,hpostadv)
+        corr_preds_clean = comp_corr_preds(preds_clean,y)
+        corr_preds_adv = comp_corr_preds(preds_adv,y)
+
+        return tf.zeros((128,)), tf.zeros((128,)), preds_clean, preds_adv, corr_preds_clean, corr_preds_adv
+
+    rec_clean_train, rec_adv_train, preds_clean_train, preds_adv_train, corr_preds_clean_train, corr_preds_adv_train = create_outputs_base(x_train, "train")
+    rec_clean_test, rec_adv_test, preds_clean_test, preds_adv_test, corr_preds_clean_test, corr_preds_adv_test = create_outputs_base(x_test, "test")
 
     def evaluate_2():
         # Accuracy of adversarially trained model on legitimate test inputs
         eval_params = {'batch_size': batch_size}
-        accuracy,rec_error,re_true,re_false = model_eval_2(sess, x, y, corrupt_prob_2, preds_2_test, X_test, Y_test,rec_cost=cost_2_test,
-                              args=eval_params,x_shape_in=shape_in,correct_preds=corr_preds_2_test)
+        accuracy,rec_error,re_true,re_false = model_eval_2(sess, x, y, corrupt_prob_2, preds_clean_test, X_test, Y_test,rec_cost=rec_clean_test,
+                              args=eval_params,x_shape_in=shape_in,correct_preds=corr_preds_clean_test)
         print('Test accuracy on legitimate examples: %0.4f' % accuracy)
         print('Test rec error clean->clean on legitimate examples: %0.4f' % rec_error)
         print('rec error on legitimate examples corr class (%0.4f) and incorr. class (%0.4f)' % (re_true,re_false))
         report.adv_train_clean_eval = accuracy
 
         # Accuracy of the adversarially trained model on adversarial examples
-        accuracy, rec_error,re_true,re_false = model_eval_2(sess, x, y, corrupt_prob_2, preds_2_adv_test, X_test, Y_test, rec_cost=cost_2_adv_test,
-                              args=eval_params,x_shape_in=shape_in,correct_preds=corr_preds_2_adv_test)
+        accuracy, rec_error,re_true,re_false = model_eval_2(sess, x, y, corrupt_prob_2, preds_adv_test, X_test, Y_test, rec_cost=rec_adv_test,
+                              args=eval_params,x_shape_in=shape_in,correct_preds=corr_preds_adv_test)
         print('Test accuracy on adversarial examples: %0.4f' % accuracy)
         print('Test rec error adv->clean on adversarial examples: %0.4f' % rec_error)
         print('rec error adv->clean corr class (%0.4f) and incorr. class (%0.4f)' % (re_true,re_false))
         report.adv_train_adv_eval = accuracy
 
     # Perform and evaluate adversarial training
-    model_train_2(sess, x, y, corrupt_prob_2, preds_2_train, X_train, Y_train, dataset,
-                rec_cost=cost_2_train+cost_2_adv_train, predictions_adv=preds_2_adv_train, evaluate=evaluate_2,
+    model_train_2(sess, x, y, corrupt_prob_2, preds_clean_train, X_train, Y_train, dataset,
+                rec_cost=rec_clean_train+rec_adv_train, predictions_adv=preds_adv_train, evaluate=evaluate_2,
                 args=train_params, rng=rng,exp_name="model_train_against_adv",rec_loss_weight=rec_loss_weight)
 
     # Calculate training errors
@@ -377,8 +408,8 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
 def main(argv=None):
     mnist_tutorial(nb_epochs=FLAGS.nb_epochs, batch_size=FLAGS.batch_size,
                    learning_rate=FLAGS.learning_rate,
-                   #attack_name='MadryEtAl', #'FGSM'
-                   attack_name='FGSM',
+                   attack_name='MadryEtAl', #'FGSM'
+                   #attack_name='FGSM',
                    clean_train=FLAGS.clean_train,
                    backprop_through_attack=FLAGS.backprop_through_attack,
                    nb_filters=FLAGS.nb_filters,
@@ -386,14 +417,14 @@ def main(argv=None):
 
 if __name__ == '__main__':
     flags.DEFINE_integer('nb_filters', 64, 'Model size multiplier')
-    flags.DEFINE_integer('nb_epochs', 250, 'Number of epochs to train model')
+    flags.DEFINE_integer('nb_epochs', 5, 'Number of epochs to train model')
     flags.DEFINE_integer('batch_size', 128, 'Size of training batches')
     flags.DEFINE_float('learning_rate', 0.001, 'Learning rate for training')
     flags.DEFINE_bool('clean_train', False, 'Train on clean examples')
     flags.DEFINE_bool('backprop_through_attack', False,
                       ('If True, backprop through adversarial example '
                        'construction process during adversarial training'))
-    flags.DEFINE_string('dataset', 'cifar10', "The dataset to train and evaluate on")
+    flags.DEFINE_string('dataset', 'mnist', "The dataset to train and evaluate on")
     tf.app.run()
 
 

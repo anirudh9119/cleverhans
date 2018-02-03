@@ -134,12 +134,12 @@ if dataset_use == "cifar10":
     fils = [3,16*4,32*4,64*4]
 elif dataset_use == "mnist":
     lens = [28,14,7,4]
-    fils = [1,16,32,64]
+    fils = [1,64,128,128]
 elif dataset_use == "svhn":
     lens = [32,16,8,4]
     fils = [3,16,32,64]
 
-def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False,scope="",is_training=True):
+def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,reuse,return_state_map=False,autoenc_x=False,scope="",is_training=True):
 
     if autoenc_x:
         xa = tf.nn.leaky_relu(tf.matmul(x, autoencoder_params['x_w1']))
@@ -147,11 +147,12 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
     else:
         xuse = x
 
-    ximg = tf.reshape(xuse, [-1, lens[0],lens[0],fils[0]])
+    #ximg = tf.reshape(xuse, [-1, lens[0],lens[0],fils[0]])
+
+    ximg = xuse
 
     #c1 = tf.nn.leaky_relu(model.layers['lc1'].fprop(ximg))
  
-    reuse = tf.AUTO_REUSE
 
     if scope == "":
         vscope = empty_scope()
@@ -161,19 +162,20 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
 
     with vscope:
 
-        ximg = tf.transpose(ximg, [0, 3, 1, 2])
-        data_format='channels_first'
+        #ximg = tf.transpose(ximg, [0, 3, 1, 2])
+        #data_format='channels_first'
+        data_format = 'channels_last'
 
         c1 = tf.nn.leaky_relu(tf.layers.conv2d(
         inputs=ximg, filters=fils[1], kernel_size=(8,8), strides=(2,2),
         padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c1_conv',use_bias=True,data_format=data_format))
 
         c2 = tf.nn.leaky_relu(tf.layers.conv2d(
-        inputs=c1, filters=fils[2], kernel_size=(5,5), strides=(2,2),
+        inputs=c1, filters=fils[2], kernel_size=(6,6), strides=(2,2),
         padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c2_conv',use_bias=True,data_format=data_format))
 
         c3 = tf.nn.leaky_relu(tf.layers.conv2d(
-        inputs=c2, filters=fils[3], kernel_size=(3,3), strides=(2,2),
+        inputs=c2, filters=fils[3], kernel_size=(5,5), strides=(2,2),
         padding='SAME',reuse=reuse,kernel_initializer=tf.variance_scaling_initializer(), name='c3_conv',use_bias=True,data_format=data_format))
 
     cend = c3
@@ -240,7 +242,7 @@ class MLP_Classifier_Condrec(Model):
         self.autoencoder_params = autoencoder_params
 
     def fprop(self, x, set_ref=False):
-        states = get_output(self, x, self.encoder, self.encoder_b, self.decoder_b, self.autoencoder_params, return_state_map=True)
+        states = get_output(self, x, self.encoder, self.encoder_b, self.decoder_b, self.autoencoder_params, reuse=True, return_state_map=True)
 
         return states
 

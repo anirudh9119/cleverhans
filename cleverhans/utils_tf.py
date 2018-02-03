@@ -258,7 +258,10 @@ def model_train_2(sess, x, y, corrupt_prob, predictions, X_train, Y_train, datas
     if rng is None:
         rng = np.random.RandomState()
 
-    rec_cost_total = tf.sqrt(tf.reduce_mean(rec_cost))
+    if rec_cost is None:
+        rec_cost_total = 0.0
+    else:
+        rec_cost_total = tf.sqrt(tf.reduce_mean(rec_cost))
 
     # Define loss
     loss = model_loss(y, predictions) + \

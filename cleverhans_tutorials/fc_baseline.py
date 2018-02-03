@@ -29,7 +29,7 @@ def corrupt(x):
                                                maxval=2,
                                                dtype=tf.int32), tf.float32))
 
-def gaussian_noise(x,std=0.1):
+def gaussian_noise(x,std=0.001):
     return x + tf.cast(tf.random_normal(shape=tf.shape(x),stddev=std), tf.float32)
 
 def compute_rec_error(hpre,hpost):
@@ -104,7 +104,7 @@ def h_autoencoder(inp,encoder,encoder_b,decoder_b,autoencoder_params):
     return output_
 
 
-def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,return_state_map=False,autoenc_x=False,scope="",is_training=True):
+def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,reuse,return_state_map=False,autoenc_x=False,scope="",is_training=True):
     #x= tf.reshape(x, [-1, 784])
 
     if autoenc_x:
@@ -113,13 +113,15 @@ def get_output(model, x, encoder, encoder_b, decoder_b, autoencoder_params,retur
     else:
         xuse = x
 
+    xuse = tf.reshape(xuse, [-1,784])
+
     h_input_to_dae_ = tf.nn.leaky_relu(model.layers['l1'].fprop(xuse))
     
     output_ = h_autoencoder(gaussian_noise(h_input_to_dae_),encoder,encoder_b,decoder_b,autoencoder_params)
     
     output_blockin = h_autoencoder(gaussian_noise(tf.stop_gradient(h_input_to_dae_)),encoder,encoder_b,decoder_b,autoencoder_params)
 
-    ouput_ = h_input_to_dae_ + output_*0.0
+    output_ = h_input_to_dae_ + output_*0.0
 
     presoftmax_ = model.layers['logits'].fprop(output_)
     preds = model.layers['probs'].fprop(presoftmax_)
@@ -154,7 +156,7 @@ class MLP_Classifier_Condrec(Model):
         self.autoencoder_params = autoencoder_params
 
     def fprop(self, x, set_ref=False):
-        states = get_output(self, x, self.encoder, self.encoder_b, self.decoder_b, self.autoencoder_params, return_state_map=True)
+        states = get_output(self, x, self.encoder, self.encoder_b, self.decoder_b, self.autoencoder_params, reuse=True, return_state_map=True)
 
         return states
 
